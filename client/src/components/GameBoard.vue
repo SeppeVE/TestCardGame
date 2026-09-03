@@ -130,42 +130,75 @@ function discardAndEndTurn() {
 <template>
   <div class="board">
     <div v-if="view.roundResult" class="round-result">
-      <h2>🎉 {{ ownerName(view.roundResult.winnerId) }} wins round {{ view.roundNumber }}!</h2>
+      <div class="eyebrow">Round {{ view.roundNumber }} complete</div>
+      <h2>{{ ownerName(view.roundResult.winnerId) }} wins!</h2>
       <ul>
         <li v-for="p in view.players" :key="p.id">
-          {{ p.name }}: {{ view.roundResult.coinDeltas[p.id] >= 0 ? "+" : "" }}{{ view.roundResult.coinDeltas[p.id] }} coins
+          <span>{{ p.name }}</span>
+          <span class="delta" :class="{ pos: view.roundResult.coinDeltas[p.id] > 0 }"
+            >{{ view.roundResult.coinDeltas[p.id] >= 0 ? "+" : "" }}{{ view.roundResult.coinDeltas[p.id] }}</span
+          >
           <span class="dim">({{ p.coins }} total)</span>
         </li>
       </ul>
-      <p class="dim">Rounds 2-7 aren't built yet — this is as far as the game goes for now.</p>
+      <p class="dim small">Rounds 2-7 aren't built yet — this is as far as the game goes for now.</p>
     </div>
 
-    <div class="opponents">
-      <div v-for="p in otherPlayers" :key="p.id" class="opponent" :class="{ current: p.isCurrent, disconnected: !p.connected }">
-        <div class="opponent-name">
-          {{ p.name }}
-          <span v-if="p.isDealer" class="tag">dealer</span>
-          <span v-if="p.isCurrent" class="tag current-tag">turn</span>
+    <div class="felt">
+      <div class="felt-top-row">
+        <div class="panel-block">
+          <div class="eyebrow felt-eyebrow">Stock &amp; discard</div>
+          <div class="piles">
+            <div class="pile">
+              <div class="deck-stack">
+                <span class="deck-shadow s2" />
+                <span class="deck-shadow s1" />
+                <PlayingCard size="lg" :card="null" :disabled="myAction !== 'draw-choice'" @click="chooseDraw('stock')" />
+                <span class="pile-count">{{ view.stockCount }}</span>
+              </div>
+              <div class="pile-label">Stock</div>
+            </div>
+            <div class="pile">
+              <PlayingCard
+                v-if="view.discardTop"
+                size="lg"
+                :card="view.discardTop"
+                :disabled="myAction !== 'draw-choice'"
+                @click="chooseDraw('discard')"
+              />
+              <div v-else class="empty-pile">empty</div>
+              <div class="pile-label">Discard</div>
+            </div>
+          </div>
         </div>
-        <div class="opponent-meta">🪙 {{ p.coins }} · 🂠 {{ p.handCount }} <span v-if="p.hasOpened">· opened</span></div>
-      </div>
-    </div>
 
-    <div class="table-area">
-      <div class="piles">
-        <div class="pile">
-          <PlayingCard :card="null" :disabled="myAction !== 'draw-choice'" @click="chooseDraw('stock')" />
-          <div class="pile-label">Stock ({{ view.stockCount }})</div>
+        <div class="panel-block">
+          <div class="eyebrow felt-eyebrow">You</div>
+          <div class="score-plate">
+            <div class="score-row">
+              <span class="score-label">Coins</span>
+              <span class="score-value">{{ me?.coins ?? 0 }}</span>
+            </div>
+            <div class="rule" />
+            <div class="score-row">
+              <span class="score-label">Round</span>
+              <span class="score-value small-score">{{ view.roundNumber }}</span>
+            </div>
+          </div>
         </div>
-        <div class="pile">
-          <PlayingCard
-            v-if="view.discardTop"
-            :card="view.discardTop"
-            :disabled="myAction !== 'draw-choice'"
-            @click="chooseDraw('discard')"
-          />
-          <div v-else class="pile empty-pile">empty</div>
-          <div class="pile-label">Discard</div>
+
+        <div class="panel-block seats-block">
+          <div class="eyebrow felt-eyebrow">Seats · turn</div>
+          <div class="seats">
+            <div v-for="p in otherPlayers" :key="p.id" class="seat" :class="{ current: p.isCurrent, disconnected: !p.connected }">
+              <span class="avatar">{{ p.name.charAt(0).toUpperCase() }}</span>
+              <span class="seat-name">{{ p.name }}</span>
+              <span class="seat-status">
+                <template v-if="p.isCurrent">to play</template>
+                <template v-else>🪙{{ p.coins }} · 🂠{{ p.handCount }}</template>
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -182,51 +215,61 @@ function discardAndEndTurn() {
             <PlayingCard v-for="c in meld.cards" :key="c.id" :card="c" disabled />
           </div>
         </div>
-        <p v-if="view.melds.length === 0" class="dim">No melds on the table yet.</p>
+        <p v-if="view.melds.length === 0" class="dim felt-dim">No melds on the table yet.</p>
       </div>
-    </div>
 
-    <div class="action-bar">
-      <p v-if="myAction === 'draw-choice'" class="prompt">Your turn: take the visible discard, or draw blind from the stock.</p>
-      <div v-else-if="myAction === 'buy-decision'" class="prompt buy-prompt">
-        <span>Buy the discard ({{ view.discardTop?.isJoker ? "Joker" : `${view.discardTop?.rank}${view.discardTop?.suit}` }}) for 1 coin? You'll also draw a random penalty card.</span>
-        <div class="buy-buttons">
-          <button @click="decideBuy(true)" :disabled="busy || !me || me.coins < 1">Buy it</button>
-          <button class="secondary" @click="decideBuy(false)" :disabled="busy">Pass</button>
+      <div class="hand-section">
+        <div class="hand-header">
+          <span class="eyebrow felt-eyebrow">Your hand — click to select</span>
+          <span class="eyebrow felt-eyebrow dim-more">{{ selectedCardIds.size }} selected</span>
+        </div>
+        <div class="hand-cards">
+          <PlayingCard
+            v-for="c in view.you.hand"
+            :key="c.id"
+            :card="c"
+            :selected="selectedCardIds.has(c.id)"
+            :disabled="myAction !== 'meld-discard'"
+            @click="toggleCard(c)"
+          />
         </div>
       </div>
-      <template v-else-if="myAction === 'meld-discard'">
-        <p class="prompt">
-          {{ me?.hasOpened ? "Lay a set/run, add to any meld, or discard to end your turn." : "Lay your opening set of 3 (same rank, different suits) to start, or just discard." }}
-        </p>
-        <div class="meld-actions">
-          <button :disabled="busy || selectedCardIds.size < 3 || !!selectedMeldId" @click="layAsNewMeld">
-            Lay selected as new meld ({{ selectedCardIds.size }})
-          </button>
-          <button v-if="selectedMeldId" :disabled="busy || selectedCardIds.size < 1" @click="addToSelectedMeld">
-            Add {{ selectedCardIds.size }} card(s) to selected meld
-          </button>
-          <button class="secondary" :disabled="busy || selectedCardIds.size !== 1" @click="discardAndEndTurn">
-            Discard selected card &amp; end turn
-          </button>
+
+      <div class="action-bar">
+        <p v-if="myAction === 'draw-choice'" class="prompt">Your turn: take the visible discard, or draw blind from the stock.</p>
+        <div v-else-if="myAction === 'buy-decision'" class="prompt buy-prompt">
+          <span
+            >Buy the discard ({{ view.discardTop?.isJoker ? "Joker" : `${view.discardTop?.rank}${view.discardTop?.suit}` }}) for 1
+            coin? You'll also draw a random penalty card.</span
+          >
+          <div class="action-buttons">
+            <button @click="decideBuy(true)" :disabled="busy || !me || me.coins < 1">Buy it</button>
+            <button class="text-btn" @click="decideBuy(false)" :disabled="busy">Pass</button>
+          </div>
         </div>
-      </template>
-      <p v-else class="prompt dim">{{ waitingLabel }}</p>
+        <template v-else-if="myAction === 'meld-discard'">
+          <p class="prompt">
+            {{
+              me?.hasOpened
+                ? "Lay a set/run, add to any meld, or discard to end your turn."
+                : "Lay your opening set of 3 (same rank, different suits) to start, or just discard."
+            }}
+          </p>
+          <div class="action-buttons">
+            <button :disabled="busy || selectedCardIds.size < 3 || !!selectedMeldId" @click="layAsNewMeld">
+              Lay as new meld ({{ selectedCardIds.size }})
+            </button>
+            <button v-if="selectedMeldId" class="secondary" :disabled="busy || selectedCardIds.size < 1" @click="addToSelectedMeld">
+              Add {{ selectedCardIds.size }} to meld
+            </button>
+            <button class="text-btn" :disabled="busy || selectedCardIds.size !== 1" @click="discardAndEndTurn">
+              Discard &amp; end turn
+            </button>
+          </div>
+        </template>
+        <p v-else class="prompt dim felt-dim">{{ waitingLabel }}</p>
 
-      <p v-if="actionError" class="error">{{ actionError }}</p>
-    </div>
-
-    <div class="hand">
-      <div class="hand-label">Your hand ({{ view.you.hand.length }}) · 🪙 {{ me?.coins ?? 0 }}</div>
-      <div class="hand-cards">
-        <PlayingCard
-          v-for="c in view.you.hand"
-          :key="c.id"
-          :card="c"
-          :selected="selectedCardIds.has(c.id)"
-          :disabled="myAction !== 'meld-discard'"
-          @click="toggleCard(c)"
-        />
+        <p v-if="actionError" class="error felt-error">{{ actionError }}</p>
       </div>
     </div>
   </div>
@@ -235,194 +278,396 @@ function discardAndEndTurn() {
 <style scoped>
 .board {
   width: 100%;
-  max-width: 960px;
+  max-width: 980px;
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
+.eyebrow {
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.felt-eyebrow {
+  color: rgba(246, 239, 220, 0.6);
+}
+
+.dim-more {
+  color: rgba(246, 239, 220, 0.4);
+}
+
+/* --- round result (sits on the paper page, above the felt) --- */
 .round-result {
-  background: var(--surface-hi);
-  border-radius: 10px;
-  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 3px 14px rgba(60, 50, 30, 0.18), inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+.round-result h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin: 0.1rem 0 0.9rem;
+  font-size: 1.6rem;
 }
 
 .round-result ul {
-  padding-left: 1.2rem;
-}
-
-.opponents {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-}
-
-.opponent {
-  background: var(--surface);
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  min-width: 140px;
-  border: 1px solid transparent;
-}
-
-.opponent.current {
-  border-color: var(--accent);
-}
-
-.opponent.disconnected {
-  opacity: 0.5;
-}
-
-.opponent-name {
-  font-weight: 700;
-  display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 0.35rem;
 }
 
-.tag {
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  background: var(--surface-hi);
-  padding: 0.1rem 0.4rem;
-  border-radius: 999px;
-  color: var(--text-dim);
-}
-
-.tag.current-tag {
-  background: var(--accent);
-  color: #06301d;
-}
-
-.opponent-meta {
-  font-size: 0.8rem;
-  color: var(--text-dim);
-  margin-top: 0.2rem;
-}
-
-.table-area {
+.round-result li {
   display: flex;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  background: #0c1c15;
-  border-radius: 12px;
-  padding: 1rem;
-  min-height: 160px;
+  gap: 0.5rem;
+  align-items: baseline;
 }
 
+.delta {
+  font-weight: 600;
+  color: var(--red);
+}
+
+.delta.pos {
+  color: var(--accent);
+}
+
+.small {
+  font-size: 0.8rem;
+}
+
+/* --- felt table --- */
+.felt {
+  border-radius: 16px;
+  padding: 1.75rem;
+  background: #1f4432;
+  background-image: radial-gradient(120% 100% at 50% 0%, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.25));
+  box-shadow: inset 0 0 0 1px rgba(246, 239, 220, 0.14), 0 8px 24px rgba(20, 30, 10, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.felt-top-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.75rem;
+  align-items: start;
+}
+
+.panel-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+/* --- piles --- */
 .piles {
   display: flex;
-  gap: 1rem;
+  gap: 1.5rem;
+  align-items: flex-end;
 }
 
 .pile {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.4rem;
 }
 
 .pile-label {
-  font-size: 0.75rem;
-  color: var(--text-dim);
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(246, 239, 220, 0.5);
 }
 
-.empty-pile {
-  width: 56px;
-  height: 78px;
-  border: 1px dashed rgba(255, 255, 255, 0.2);
-  border-radius: 7px;
+.deck-stack {
+  position: relative;
+}
+
+.deck-shadow {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: #f6efdc;
+}
+
+.deck-shadow.s1 {
+  transform: translate(3px, 3px);
+  opacity: 0.75;
+}
+
+.deck-shadow.s2 {
+  transform: translate(6px, 6px);
+  opacity: 0.5;
+}
+
+.pile-count {
+  position: absolute;
+  right: -10px;
+  bottom: -10px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  background: #f6efdc;
+  color: #1f4432;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.7rem;
-  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0 7px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
-.melds {
+.empty-pile {
+  width: 100px;
+  height: 142px;
+  border-radius: 10px;
+  border: 1px dashed rgba(246, 239, 220, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(246, 239, 220, 0.5);
+}
+
+/* --- score plate --- */
+.score-plate {
+  background: rgba(10, 25, 18, 0.4);
+  border: 1px solid rgba(246, 239, 220, 0.18);
+  border-radius: 10px;
+  padding: 0.9rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.score-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(246, 239, 220, 0.75);
+}
+
+.score-value {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  line-height: 1;
+  color: #f6efdc;
+}
+
+.score-value.small-score {
+  font-size: 1.3rem;
+  color: rgba(246, 239, 220, 0.7);
+}
+
+.rule {
+  height: 1px;
+  background: rgba(246, 239, 220, 0.16);
+}
+
+/* --- seats --- */
+.seats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.seat {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  background: rgba(10, 25, 18, 0.35);
+  border: 1px solid rgba(246, 239, 220, 0.14);
+  color: rgba(246, 239, 220, 0.8);
+}
+
+.seat.disconnected {
+  opacity: 0.5;
+}
+
+.seat.current {
+  background: rgba(246, 239, 220, 0.94);
+  color: #1f4432;
+  border-color: transparent;
+}
+
+.avatar {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 50%;
+  background: rgba(246, 239, 220, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+
+.seat.current .avatar {
+  background: #1f4432;
+  color: #f6efdc;
+}
+
+.seat-name {
+  font-size: 0.8rem;
   flex: 1;
+}
+
+.seat-status {
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* --- melds --- */
+.melds {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.9rem;
   align-content: flex-start;
 }
 
 .meld {
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 8px;
-  padding: 0.5rem;
-  border: 2px solid transparent;
+  background: rgba(10, 25, 18, 0.35);
+  border: 1px solid rgba(246, 239, 220, 0.14);
+  border-radius: 10px;
+  padding: 0.6rem;
   cursor: pointer;
+  transition: border-color 0.15s;
 }
 
 .meld.targetable:hover {
-  border-color: rgba(74, 222, 128, 0.4);
+  border-color: rgba(246, 239, 220, 0.4);
 }
 
 .meld.targeted {
-  border-color: var(--accent);
+  border-color: #f6efdc;
 }
 
 .meld-owner {
-  font-size: 0.7rem;
-  color: var(--text-dim);
-  margin-bottom: 0.3rem;
-  text-transform: capitalize;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(246, 239, 220, 0.6);
+  margin-bottom: 0.4rem;
 }
 
 .meld-cards {
   display: flex;
-  gap: -8px;
 }
 
 .meld-cards > * {
-  margin-right: -22px;
+  margin-right: -30px;
 }
 
 .meld-cards > *:last-child {
   margin-right: 0;
 }
 
-.action-bar {
-  background: var(--surface);
-  border-radius: 10px;
-  padding: 0.75rem 1rem;
-  min-height: 3rem;
+.felt-dim {
+  color: rgba(246, 239, 220, 0.45);
+  font-size: 0.85rem;
 }
 
-.prompt {
-  margin: 0 0 0.5rem;
-}
-
-.buy-prompt {
+/* --- hand --- */
+.hand-section {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.6rem;
 }
 
-.buy-buttons,
-.meld-actions {
+.hand-header {
   display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.hand {
-  position: sticky;
-  bottom: 0;
-}
-
-.hand-label {
-  font-size: 0.8rem;
-  color: var(--text-dim);
-  margin-bottom: 0.4rem;
+  justify-content: space-between;
+  align-items: baseline;
 }
 
 .hand-cards {
   display: flex;
   gap: 0.4rem;
   overflow-x: auto;
-  padding: 0.5rem 0 1rem;
+  padding: 0.9rem 0.25rem 1.1rem;
+  justify-content: center;
+}
+
+/* --- action bar --- */
+.action-bar {
+  border-top: 1px solid rgba(246, 239, 220, 0.14);
+  padding-top: 1.1rem;
+}
+
+.prompt {
+  margin: 0 0 0.7rem;
+  color: #f6efdc;
+  font-size: 0.9rem;
+}
+
+.buy-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.action-bar button.secondary {
+  color: #f6efdc;
+  border-color: rgba(246, 239, 220, 0.5);
+}
+
+.action-bar button.secondary:hover {
+  border-color: #f6efdc;
+  background: rgba(246, 239, 220, 0.1);
+}
+
+.text-btn {
+  background: transparent;
+  color: rgba(246, 239, 220, 0.6);
+  box-shadow: none;
+  padding: 0.7rem 0.9rem;
+}
+
+.text-btn:hover {
+  color: #f6efdc;
+  filter: none;
+}
+
+.text-btn:active {
+  transform: none;
+  box-shadow: none;
+}
+
+.felt-error {
+  margin-top: 0.6rem;
+  color: #ffb4a8;
 }
 
 .dim {
