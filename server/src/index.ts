@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import express from "express";
 import cors from "cors";
 import { Server } from "socket.io";
-import { handleBuyDecision, handleDrawChoice, handleEndTurn, handleLayMeld, startRound1 } from "./game/engine.js";
+import { handleDiscardDecision, handleEndTurn, handleLayMeld, startRound1 } from "./game/engine.js";
 import { buildGameView } from "./game/view.js";
 import { RoomManager, type InternalRoom } from "./rooms.js";
 import type { ClientToServerEvents, ServerToClientEvents } from "./types.js";
@@ -104,18 +104,10 @@ io.on("connection", (socket) => {
     broadcastGameState(room);
   });
 
-  socket.on("game:drawChoice", ({ roomCode, playerId, source }, ack) => {
+  socket.on("game:discardDecision", ({ roomCode, playerId, wantsToTake }, ack) => {
     const room = rooms.getRoom(roomCode);
     if (!room?.game) return ack({ ok: false, error: "No game in progress." });
-    const result = handleDrawChoice(room.game, playerId, source);
-    ack(result);
-    if (result.ok) broadcastGameState(room);
-  });
-
-  socket.on("game:buyDecision", ({ roomCode, playerId, wantsToBuy }, ack) => {
-    const room = rooms.getRoom(roomCode);
-    if (!room?.game) return ack({ ok: false, error: "No game in progress." });
-    const result = handleBuyDecision(room.game, playerId, wantsToBuy);
+    const result = handleDiscardDecision(room.game, playerId, wantsToTake);
     ack(result);
     if (result.ok) broadcastGameState(room);
   });

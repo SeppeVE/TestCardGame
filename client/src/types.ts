@@ -37,7 +37,14 @@ export interface Meld {
   cards: Card[];
 }
 
-export type TurnPhase = "draw-choice" | "buy-window" | "meld-discard";
+export type TurnPhase = "discard-decision" | "meld-discard";
+
+export type DiscardDecisionStatus = "pending" | "take" | "pass";
+
+export interface DiscardDecisionState {
+  order: string[];
+  decisions: Record<string, DiscardDecisionStatus>;
+}
 
 export interface RoundResult {
   winnerId: string;
@@ -64,7 +71,7 @@ export interface GameStateView {
   stockCount: number;
   melds: Meld[];
   players: GamePlayerView[];
-  pendingBuyPlayerId: string | null;
+  discardDecision: DiscardDecisionState | null;
   you: { id: string; hand: Card[] };
   roundResult: RoundResult | null;
 }
@@ -83,12 +90,8 @@ export interface ClientToServerEvents {
   "room:leave": (payload: { roomCode: string; playerId: string }) => void;
 
   "game:start": (payload: { roomCode: string; playerId: string }, ack: (res: ActionAck) => void) => void;
-  "game:drawChoice": (
-    payload: { roomCode: string; playerId: string; source: "discard" | "stock" },
-    ack: (res: ActionAck) => void
-  ) => void;
-  "game:buyDecision": (
-    payload: { roomCode: string; playerId: string; wantsToBuy: boolean },
+  "game:discardDecision": (
+    payload: { roomCode: string; playerId: string; wantsToTake: boolean },
     ack: (res: ActionAck) => void
   ) => void;
   "game:layMeld": (

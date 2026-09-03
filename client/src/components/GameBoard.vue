@@ -29,27 +29,42 @@ const me = computed(() => props.view.players.find((p) => p.id === props.myPlayer
 const isMyTurn = computed(() => props.view.currentPlayerId === props.myPlayerId);
 const otherPlayers = computed(() => props.view.players.filter((p) => p.id !== props.myPlayerId));
 
-const myAction = computed<"draw-choice" | "buy-decision" | "meld-discard" | "waiting">(() => {
+function ownerName(ownerId: string): string {
+  return props.view.players.find((p) => p.id === ownerId)?.name ?? "Unknown";
+}
+
+// Everyone eligible answers "take/buy or pass" at once — no need to wait
+// your turn in a queue just to see the option.
+const myDiscardStatus = computed(() => props.view.discardDecision?.decisions[props.myPlayerId] ?? null);
+const isFreeTake = computed(() => props.view.discardDecision?.order[0] === props.myPlayerId);
+const stillPendingNames = computed(() => {
+  const dd = props.view.discardDecision;
+  if (!dd) return [];
+  return dd.order.filter((id) => dd.decisions[id] === "pending" && id !== props.myPlayerId).map(ownerName);
+});
+
+const myAction = computed<"discard-decision" | "meld-discard" | "waiting">(() => {
   if (props.view.roundResult) return "waiting";
-  if (props.view.turnPhase === "draw-choice" && isMyTurn.value) return "draw-choice";
-  if (props.view.turnPhase === "buy-window" && props.view.pendingBuyPlayerId === props.myPlayerId) {
-    return "buy-decision";
-  }
+  if (props.view.turnPhase === "discard-decision" && myDiscardStatus.value === "pending") return "discard-decision";
   if (props.view.turnPhase === "meld-discard" && isMyTurn.value) return "meld-discard";
   return "waiting";
 });
 
+function cardLabel(card: Card | null): string {
+  if (!card) return "";
+  return card.isJoker ? "Joker" : `${card.rank}${card.suit}`;
+}
+
 const waitingLabel = computed(() => {
   const v = props.view;
   if (v.roundResult) return "";
-  if (v.turnPhase === "buy-window" && v.pendingBuyPlayerId) {
-    const name = v.players.find((p) => p.id === v.pendingBuyPlayerId)?.name ?? "someone";
-    return `Waiting for ${name} to decide whether to buy the discard…`;
+  if (v.turnPhase === "discard-decision") {
+    const dd = v.discardDecision;
+    const pending = dd?.order.filter((id) => dd.decisions[id] === "pending").map(ownerName) ?? [];
+    return pending.length ? `Waiting on ${pending.join(", ")} to decide on the discard…` : "Resolving the discard…";
   }
   const currentName = v.players.find((p) => p.id === v.currentPlayerId)?.name ?? "someone";
-  return v.turnPhase === "draw-choice"
-    ? `Waiting for ${currentName} to take the discard or draw blind…`
-    : `Waiting for ${currentName}…`;
+  return `Waiting for ${currentName}…`;
 });
 
 function toggleCard(card: Card) {
@@ -63,10 +78,6 @@ function toggleCard(card: Card) {
 function toggleMeldTarget(meld: Meld) {
   if (myAction.value !== "meld-discard") return;
   selectedMeldId.value = selectedMeldId.value === meld.id ? null : meld.id;
-}
-
-function ownerName(ownerId: string): string {
-  return props.view.players.find((p) => p.id === ownerId)?.name ?? "Unknown";
 }
 
 function runAction(promiseLike: (ack: (res: ActionAck) => void) => void) {
@@ -83,13 +94,9 @@ function runAction(promiseLike: (ack: (res: ActionAck) => void) => void) {
   });
 }
 
-function chooseDraw(source: "discard" | "stock") {
-  runAction((ack) => socket.emit("game:drawChoice", { roomCode: props.roomCode, playerId: props.myPlayerId, source }, ack));
-}
-
-function decideBuy(wantsToBuy: boolean) {
+function submitDecision(wantsToTake: boolean) {
   runAction((ack) =>
-    socket.emit("game:buyDecision", { roomCode: props.roomCode, playerId: props.myPlayerId, wantsToBuy }, ack)
+    socket.emit("game:discardDecision", { roomCode: props.roomCode, playerId: props.myPlayerId, wantsToTake }, ack)
   );
 }
 
@@ -153,7 +160,12 @@ function discardAndEndTurn() {
               <div class="deck-stack">
                 <span class="deck-shadow s2" />
                 <span class="deck-shadow s1" />
-                <PlayingCard size="lg" :card="null" :disabled="myAction !== 'draw-choice'" @click="chooseDraw('stock')" />
+                <PlayingCard
+                  size="lg"
+                  :card="null"
+                  :disabled="!(myAction === 'discard-decision' && isFreeTake)"
+                  @click="submitDecision(false)"
+                />
                 <span class="pile-count">{{ view.stockCount }}</span>
               </div>
               <div class="pile-label">Stock</div>
@@ -163,8 +175,8 @@ function discardAndEndTurn() {
                 v-if="view.discardTop"
                 size="lg"
                 :card="view.discardTop"
-                :disabled="myAction !== 'draw-choice'"
-                @click="chooseDraw('discard')"
+                :disabled="!(myAction === 'discard-decision' && isFreeTake)"
+                @click="submitDecision(true)"
               />
               <div v-else class="empty-pile">empty</div>
               <div class="pile-label">Discard</div>
@@ -236,26 +248,17 @@ function discardAndEndTurn() {
       </div>
 
       <div class="action-bar">
-        <div v-if="myAction === 'draw-choice'" class="prompt buy-prompt">
-          <span>Your turn: take the visible discard, or draw blind from the stock.</span>
+        <div v-if="myAction === 'discard-decision'" class="prompt buy-prompt">
+          <span v-if="isFreeTake">Take the discard ({{ cardLabel(view.discardTop) }}), or pass and draw blind from the stock?</span>
+          <span v-else>Buy the discard ({{ cardLabel(view.discardTop) }}) for 1 coin? You'll also draw a random penalty card.</span>
           <div class="action-buttons">
-            <button :disabled="busy || !view.discardTop" @click="chooseDraw('discard')">
-              Take discard{{
-                view.discardTop ? ` (${view.discardTop.isJoker ? "Joker" : `${view.discardTop.rank}${view.discardTop.suit}`})` : ""
-              }}
+            <button v-if="isFreeTake" :disabled="busy || !view.discardTop" @click="submitDecision(true)">
+              Take discard ({{ cardLabel(view.discardTop) }})
             </button>
-            <button class="secondary" :disabled="busy" @click="chooseDraw('stock')">Draw blind instead</button>
+            <button v-else :disabled="busy || !me || me.coins < 1" @click="submitDecision(true)">Buy it</button>
+            <button class="text-btn" :disabled="busy" @click="submitDecision(false)">Pass</button>
           </div>
-        </div>
-        <div v-else-if="myAction === 'buy-decision'" class="prompt buy-prompt">
-          <span
-            >Buy the discard ({{ view.discardTop?.isJoker ? "Joker" : `${view.discardTop?.rank}${view.discardTop?.suit}` }}) for 1
-            coin? You'll also draw a random penalty card.</span
-          >
-          <div class="action-buttons">
-            <button @click="decideBuy(true)" :disabled="busy || !me || me.coins < 1">Buy it</button>
-            <button class="text-btn" @click="decideBuy(false)" :disabled="busy">Pass</button>
-          </div>
+          <p v-if="stillPendingNames.length" class="felt-dim small-note">Also deciding: {{ stillPendingNames.join(", ") }}</p>
         </div>
         <template v-else-if="myAction === 'meld-discard'">
           <p class="prompt">
@@ -600,6 +603,11 @@ function discardAndEndTurn() {
 .felt-dim {
   color: rgba(246, 239, 220, 0.45);
   font-size: 0.85rem;
+}
+
+.small-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
 }
 
 /* --- hand --- */

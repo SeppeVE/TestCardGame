@@ -49,7 +49,7 @@ export function buildGameView(game: GameState, playerInfos: PublicPlayerInfo[], 
         isCurrent: id === currentPlayerId,
       };
     }),
-    pendingBuyPlayerId: game.pendingBuy ? game.pendingBuy.order[game.pendingBuy.cursor] : null,
+    discardDecision: game.discardDecision,
     you: { id: viewerId, hand: sortForDisplay(viewerHand) },
     roundResult: game.roundResult,
   };

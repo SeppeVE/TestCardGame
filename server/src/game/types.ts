@@ -25,7 +25,21 @@ export interface Meld {
   cards: Card[];
 }
 
-export type TurnPhase = "draw-choice" | "buy-window" | "meld-discard";
+export type TurnPhase = "discard-decision" | "meld-discard";
+
+export type DiscardDecisionStatus = "pending" | "take" | "pass";
+
+/**
+ * Everyone eligible answers "take/buy or pass" on the discard at once
+ * instead of being asked one at a time. `order` is priority order: the
+ * current player first (free take), then everyone else who can afford to
+ * buy, in seat order. The first "take" found walking that order wins,
+ * regardless of whether people after them have answered yet.
+ */
+export interface DiscardDecisionState {
+  order: string[];
+  decisions: Record<string, DiscardDecisionStatus>;
+}
 
 export interface RoundResult {
   winnerId: string;
@@ -54,8 +68,7 @@ export interface GameStateView {
   stockCount: number;
   melds: Meld[];
   players: GamePlayerView[];
-  /** Who is currently being asked to buy the discard, if anyone. */
-  pendingBuyPlayerId: string | null;
+  discardDecision: DiscardDecisionState | null;
   you: { id: string; hand: Card[] };
   roundResult: RoundResult | null;
 }
