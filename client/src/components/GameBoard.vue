@@ -227,14 +227,30 @@ function startNextRound() {
           <span class="delta" :class="{ pos: view.roundResult.coinDeltas[p.id] > 0 }"
             >{{ view.roundResult.coinDeltas[p.id] >= 0 ? "+" : "" }}{{ view.roundResult.coinDeltas[p.id] }}</span
           >
-          <span class="dim">({{ p.coins }} total)</span>
+          <span class="dim">({{ p.coins }} coins)</span>
+          <span class="dim">· scored {{ view.roundResult.handScores[p.id] }} pt this round ({{ p.points }} total)</span>
         </li>
       </ul>
+
+      <div v-if="view.roundResult.finalPayout" class="final-payout">
+        <div class="eyebrow">Final round bonus</div>
+        <p>
+          The buy-pot of {{ view.roundResult.finalPayout.potTotal }} coins — every coin ever spent buying a discard this
+          game — is split between {{ view.roundResult.finalPayout.recipients.map(ownerName).join(", ") }} ({{
+            view.roundResult.finalPayout.share
+          }}
+          coins each<template v-if="view.roundResult.finalPayout.remainderToWinner"
+            >, plus {{ view.roundResult.finalPayout.remainderToWinner }} extra to
+            {{ ownerName(view.roundResult.winnerId) }} for the odd remainder</template
+          >).
+        </p>
+      </div>
+
       <template v-if="view.hasNextRound">
         <button v-if="isHost" :disabled="busy" @click="startNextRound">Start round {{ view.roundNumber + 1 }}</button>
         <p v-else class="dim small">Waiting for the host to start round {{ view.roundNumber + 1 }}.</p>
       </template>
-      <p v-else class="dim small">Rounds {{ view.roundNumber + 1 }}-7 aren't built yet — this is as far as the game goes for now.</p>
+      <p v-else class="dim small">🏆 That was the final round — game over!</p>
       <p v-if="actionError" class="error" style="margin-top: 0.75rem">{{ actionError }}</p>
     </div>
 
@@ -280,8 +296,18 @@ function startNextRound() {
             </div>
             <div class="rule" />
             <div class="score-row">
+              <span class="score-label">Points</span>
+              <span class="score-value small-score">{{ me?.points ?? 0 }}</span>
+            </div>
+            <div class="rule" />
+            <div class="score-row">
               <span class="score-label">Round</span>
               <span class="score-value small-score">{{ view.roundNumber }}</span>
+            </div>
+            <div class="rule" />
+            <div class="score-row">
+              <span class="score-label">Buy pot</span>
+              <span class="score-value small-score">{{ view.buyPot }}</span>
             </div>
             <p class="contract-note">To open: {{ view.contractDescription }}.</p>
           </div>
@@ -295,7 +321,7 @@ function startNextRound() {
               <span class="seat-name">{{ p.name }}</span>
               <span class="seat-status">
                 <template v-if="p.isCurrent">to play</template>
-                <template v-else>🪙{{ p.coins }} · 🂠{{ p.handCount }}</template>
+                <template v-else>🪙{{ p.coins }} · {{ p.points }}pt · 🂠{{ p.handCount }}</template>
               </span>
             </div>
           </div>
@@ -494,6 +520,18 @@ function startNextRound() {
 
 .small {
   font-size: 0.8rem;
+}
+
+.final-payout {
+  background: var(--surface-hi);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.final-payout p {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
 }
 
 /* --- felt table --- */

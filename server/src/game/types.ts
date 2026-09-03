@@ -41,10 +41,29 @@ export interface DiscardDecisionState {
   decisions: Record<string, DiscardDecisionStatus>;
 }
 
+/**
+ * The final round's extra payout: the pot of every coin ever spent
+ * buying a discard, across the whole game, split evenly between the
+ * round's winner and anyone whose total points are still <= the
+ * winner's (rewarding consistently efficient play even if they didn't
+ * win the very last hand). A split that doesn't divide evenly hands the
+ * remainder to the round winner.
+ */
+export interface FinalPayout {
+  potTotal: number;
+  recipients: string[];
+  share: number;
+  remainderToWinner: number;
+}
+
 export interface RoundResult {
   winnerId: string;
   /** Net coin change per player id for this round's payout. */
   coinDeltas: Record<string, number>;
+  /** Penalty points each player's remaining hand was worth this round (0 for the winner). */
+  handScores: Record<string, number>;
+  /** Set only when this was the final (lay-out) round. */
+  finalPayout: FinalPayout | null;
 }
 
 export interface GamePlayerView {
@@ -52,6 +71,8 @@ export interface GamePlayerView {
   name: string;
   connected: boolean;
   coins: number;
+  /** Cumulative penalty points from every round scored so far — lower is better. */
+  points: number;
   handCount: number;
   hasOpened: boolean;
   isDealer: boolean;
@@ -67,6 +88,8 @@ export interface GameStateView {
   hasNextRound: boolean;
   /** The final round: nothing can be laid until the whole hand goes down at once (see game:layOutHand). */
   isLayOutRound: boolean;
+  /** Running total of every coin ever spent buying a discard this game — paid out at the end of the final round. */
+  buyPot: number;
   turnPhase: TurnPhase;
   currentPlayerId: string;
   discardTop: Card | null;

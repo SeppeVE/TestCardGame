@@ -46,9 +46,18 @@ export interface DiscardDecisionState {
   decisions: Record<string, DiscardDecisionStatus>;
 }
 
+export interface FinalPayout {
+  potTotal: number;
+  recipients: string[];
+  share: number;
+  remainderToWinner: number;
+}
+
 export interface RoundResult {
   winnerId: string;
   coinDeltas: Record<string, number>;
+  handScores: Record<string, number>;
+  finalPayout: FinalPayout | null;
 }
 
 export interface GamePlayerView {
@@ -56,6 +65,7 @@ export interface GamePlayerView {
   name: string;
   connected: boolean;
   coins: number;
+  points: number;
   handCount: number;
   hasOpened: boolean;
   isDealer: boolean;
@@ -67,6 +77,7 @@ export interface GameStateView {
   contractDescription: string;
   hasNextRound: boolean;
   isLayOutRound: boolean;
+  buyPot: number;
   turnPhase: TurnPhase;
   currentPlayerId: string;
   discardTop: Card | null;

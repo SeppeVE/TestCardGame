@@ -1,12 +1,15 @@
 import { buildShoe, shuffle } from "./cards.js";
 import { getContract } from "./contracts.js";
 import { isValidExtension, isValidRun, isValidSet } from "./melds.js";
-import type { Card, DiscardDecisionState, Meld, RoundResult, TurnPhase } from "./types.js";
+import { scoreHand } from "./scoring.js";
+import type { Card, DiscardDecisionState, FinalPayout, Meld, RoundResult, TurnPhase } from "./types.js";
 
 export interface GamePlayerState {
   id: string;
   hand: Card[];
   coins: number;
+  /** Cumulative penalty points from every round scored so far — lower is better. */
+  points: number;
   /** Has this player laid their round's opening contract yet? */
   hasOpened: boolean;
 }
@@ -24,6 +27,8 @@ export interface GameState {
   players: Record<string, GamePlayerState>;
   turnPhase: TurnPhase;
   discardDecision: DiscardDecisionState | null;
+  /** Every coin ever spent buying a discard this game — paid out at the end of the final round. */
+  buyPot: number;
   roundResult: RoundResult | null;
 }
 
@@ -41,19 +46,21 @@ function nextMeldId(): string {
   return `meld-${Date.now()}-${meldIdCounter}`;
 }
 
-export function startRound(
-  roundNumber: number,
-  playerIds: string[],
-  dealerId: string,
-  existingCoins?: Record<string, number>
-): GameState {
+export interface CarryForward {
+  coins: Record<string, number>;
+  points: Record<string, number>;
+  buyPot: number;
+}
+
+export function startRound(roundNumber: number, playerIds: string[], dealerId: string, carry?: CarryForward): GameState {
   const shoe = shuffle(buildShoe());
   const players: Record<string, GamePlayerState> = {};
   for (const id of playerIds) {
     players[id] = {
       id,
       hand: shoe.splice(0, HAND_SIZE),
-      coins: existingCoins?.[id] ?? STARTING_COINS,
+      coins: carry?.coins[id] ?? STARTING_COINS,
+      points: carry?.points[id] ?? 0,
       hasOpened: false,
     };
   }
@@ -73,21 +80,30 @@ export function startRound(
     players,
     turnPhase: "meld-discard", // placeholder, immediately replaced below
     discardDecision: null,
+    buyPot: carry?.buyPot ?? 0,
     roundResult: null,
   };
   beginDiscardDecision(game);
   return game;
 }
 
-/** Starts the round after `previousGame`, carrying coins forward and rotating the dealer. */
+/** Starts the round after `previousGame`, carrying coins/points/the buy pot forward and rotating the dealer. */
 export function startNextRound(previousGame: GameState): GameState {
   const coins: Record<string, number> = {};
-  for (const id of previousGame.order) coins[id] = previousGame.players[id].coins;
+  const points: Record<string, number> = {};
+  for (const id of previousGame.order) {
+    coins[id] = previousGame.players[id].coins;
+    points[id] = previousGame.players[id].points;
+  }
 
   const dealerIndex = previousGame.order.indexOf(previousGame.dealerId);
   const nextDealerId = previousGame.order[(dealerIndex + 1) % previousGame.order.length];
 
-  return startRound(previousGame.roundNumber + 1, previousGame.order, nextDealerId, coins);
+  return startRound(previousGame.roundNumber + 1, previousGame.order, nextDealerId, {
+    coins,
+    points,
+    buyPot: previousGame.buyPot,
+  });
 }
 
 function currentPlayerId(game: GameState): string {
@@ -150,6 +166,7 @@ function settleDiscardDecision(game: GameState, winnerId: string | null): void {
     const isFreeTake = winnerId === currentPlayerId(game);
     if (!isFreeTake) {
       winner.coins -= BUY_COST;
+      game.buyPot += BUY_COST;
       for (let i = 0; i < BUY_PENALTY_DRAW; i++) {
         const penalty = drawFromStock(game);
         if (penalty) winner.hand.push(penalty);
@@ -353,6 +370,29 @@ export function handleLayOutHand(game: GameState, playerId: string, groups: stri
   return { ok: true };
 }
 
+/**
+ * The final round's extra prize: every coin ever spent buying a discard
+ * this game goes to the round's winner — unless other players finished
+ * with total points <= the winner's, in which case they share it
+ * equally (points must already include this round's score by the time
+ * this is called). An uneven split rounds down and hands the leftover
+ * to the winner.
+ */
+function payOutFinalPot(game: GameState, winnerId: string): FinalPayout {
+  const winnerPoints = game.players[winnerId].points;
+  const recipients = game.order.filter((id) => id === winnerId || game.players[id].points <= winnerPoints);
+
+  const potTotal = game.buyPot;
+  const share = Math.floor(potTotal / recipients.length);
+  const remainderToWinner = potTotal - share * recipients.length;
+
+  for (const id of recipients) game.players[id].coins += share;
+  game.players[winnerId].coins += remainderToWinner;
+  game.buyPot = 0;
+
+  return { potTotal, recipients, share, remainderToWinner };
+}
+
 export function handleEndTurn(game: GameState, playerId: string, discardCardId: string): ActionResult {
   if (game.roundResult) return { ok: false, error: "The round is over." };
   if (game.turnPhase !== "meld-discard") return { ok: false, error: "You can't discard right now." };
@@ -379,7 +419,18 @@ export function handleEndTurn(game: GameState, playerId: string, discardCardId: 
     }
     player.coins += collected;
     coinDeltas[playerId] = collected;
-    game.roundResult = { winnerId: playerId, coinDeltas };
+
+    // Score everyone's remaining hand (0 for the winner) into their running total.
+    const handScores: Record<string, number> = {};
+    for (const id of game.order) {
+      const score = id === playerId ? 0 : scoreHand(game.players[id].hand);
+      handScores[id] = score;
+      game.players[id].points += score;
+    }
+
+    const finalPayout = getContract(game.roundNumber).kind === "lay-out" ? payOutFinalPot(game, playerId) : null;
+
+    game.roundResult = { winnerId: playerId, coinDeltas, handScores, finalPayout };
     return { ok: true };
   }
 

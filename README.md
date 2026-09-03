@@ -48,6 +48,15 @@ of the game are implemented.
   the round; everyone else pays the winner 2 coins (or whatever they have
   left, if less). The host can then start the next round, carrying coins
   forward.
+- At the end of every round, each player scores penalty points for the
+  cards still in their hand (0 for the winner): ace = 1, 2–9 = face value,
+  10/J/Q/K = 10, joker = 50. These accumulate across the whole game —
+  lower is better.
+- Every coin ever spent buying a discard goes into a running pot, paid out
+  only at the end of the final round: the winner takes it all, unless
+  other players finished with total points ≤ the winner's, in which case
+  they split it evenly with them (a remainder that doesn't divide evenly
+  goes to the winner).
 
 No accounts — you pick a display name, create or join a room by a 4-letter
 code (or a shareable link), and that's it. Your identity is remembered in
