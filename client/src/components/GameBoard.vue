@@ -47,7 +47,9 @@ const waitingLabel = computed(() => {
     return `Waiting for ${name} to decide whether to buy the discard…`;
   }
   const currentName = v.players.find((p) => p.id === v.currentPlayerId)?.name ?? "someone";
-  return v.turnPhase === "draw-choice" ? `Waiting for ${currentName} to draw…` : `Waiting for ${currentName}…`;
+  return v.turnPhase === "draw-choice"
+    ? `Waiting for ${currentName} to take the discard or draw blind…`
+    : `Waiting for ${currentName}…`;
 });
 
 function toggleCard(card: Card) {
