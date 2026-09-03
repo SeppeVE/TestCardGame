@@ -260,6 +260,12 @@ export function handleLayMeld(
 
   if (!player.hasOpened) {
     const contract = getContract(game.roundNumber);
+    if (contract.kind === "lay-out") {
+      return {
+        ok: false,
+        error: "This round requires laying your entire hand at once — use the lay-out action instead.",
+      };
+    }
     const meetsContract =
       contract.kind === "set" ? isValidSet(picked) : isValidRun(picked) && picked.length >= contract.length;
     if (!meetsContract) {
@@ -288,6 +294,63 @@ export function handleLayMeld(
     return { ok: true };
   }
   return { ok: false, error: "That's not a valid set or run." };
+}
+
+/**
+ * The final round's all-or-nothing lay: every group must be a valid set
+ * or run of 3+, and together they must use exactly hand.length-1 cards
+ * (the one left over is what gets discarded next, via handleEndTurn, to
+ * win). Fully validated before anything is mutated, so a bad combination
+ * never leaves the player's hand partially laid out.
+ */
+export function handleLayOutHand(game: GameState, playerId: string, groups: string[][]): ActionResult {
+  if (game.roundResult) return { ok: false, error: "The round is over." };
+  if (game.turnPhase !== "meld-discard") return { ok: false, error: "You can't lay cards right now." };
+  if (currentPlayerId(game) !== playerId) return { ok: false, error: "It's not your turn." };
+
+  const contract = getContract(game.roundNumber);
+  if (contract.kind !== "lay-out") {
+    return { ok: false, error: "This round doesn't use the lay-out action — lay melds one at a time instead." };
+  }
+
+  const player = game.players[playerId];
+  if (player.hasOpened) return { ok: false, error: "You've already laid out this round." };
+  if (groups.length === 0) return { ok: false, error: "Group your cards into sets/runs first." };
+
+  const allIds = groups.flat();
+  const idSet = new Set(allIds);
+  if (idSet.size !== allIds.length) return { ok: false, error: "A card can't be used in two groups." };
+  if (allIds.length !== player.hand.length - 1) {
+    return {
+      ok: false,
+      error: `You must lay out your whole hand at once, keeping exactly one card back to discard (${allIds.length} of ${
+        player.hand.length - 1
+      } needed selected).`,
+    };
+  }
+
+  const cardById = new Map(player.hand.map((c) => [c.id, c]));
+  const typedGroups: { type: "set" | "run"; cards: Card[] }[] = [];
+  for (const group of groups) {
+    if (group.length < 3) return { ok: false, error: "Each group needs at least 3 cards." };
+    const cards: Card[] = [];
+    for (const id of group) {
+      const card = cardById.get(id);
+      if (!card) return { ok: false, error: "One of those cards isn't in your hand." };
+      cards.push(card);
+    }
+    if (isValidSet(cards)) typedGroups.push({ type: "set", cards });
+    else if (isValidRun(cards)) typedGroups.push({ type: "run", cards });
+    else return { ok: false, error: "One of those groups isn't a valid set or run." };
+  }
+
+  // Everything checks out — commit it all at once.
+  removeFromHand(player.hand, allIds);
+  for (const { type, cards } of typedGroups) {
+    game.melds.push({ id: nextMeldId(), type, ownerId: playerId, cards });
+  }
+  player.hasOpened = true;
+  return { ok: true };
 }
 
 export function handleEndTurn(game: GameState, playerId: string, discardCardId: string): ActionResult {

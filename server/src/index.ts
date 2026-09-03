@@ -3,7 +3,14 @@ import { createServer } from "node:http";
 import express from "express";
 import cors from "cors";
 import { Server } from "socket.io";
-import { handleDiscardDecision, handleEndTurn, handleLayMeld, startNextRound, startRound } from "./game/engine.js";
+import {
+  handleDiscardDecision,
+  handleEndTurn,
+  handleLayMeld,
+  handleLayOutHand,
+  startNextRound,
+  startRound,
+} from "./game/engine.js";
 import { MAX_IMPLEMENTED_ROUND } from "./game/contracts.js";
 import { buildGameView } from "./game/view.js";
 import { RoomManager, type InternalRoom } from "./rooms.js";
@@ -131,6 +138,14 @@ io.on("connection", (socket) => {
     const room = rooms.getRoom(roomCode);
     if (!room?.game) return ack({ ok: false, error: "No game in progress." });
     const result = handleLayMeld(room.game, playerId, cardIds, targetMeldId);
+    ack(result);
+    if (result.ok) broadcastGameState(room);
+  });
+
+  socket.on("game:layOutHand", ({ roomCode, playerId, groups }, ack) => {
+    const room = rooms.getRoom(roomCode);
+    if (!room?.game) return ack({ ok: false, error: "No game in progress." });
+    const result = handleLayOutHand(room.game, playerId, groups);
     ack(result);
     if (result.ok) broadcastGameState(room);
   });

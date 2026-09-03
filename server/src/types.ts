@@ -42,6 +42,10 @@ export interface ClientToServerEvents {
     payload: { roomCode: string; playerId: string; cardIds: string[]; targetMeldId?: string },
     ack: (res: ActionAck) => void
   ) => void;
+  "game:layOutHand": (
+    payload: { roomCode: string; playerId: string; groups: string[][] },
+    ack: (res: ActionAck) => void
+  ) => void;
   "game:endTurn": (
     payload: { roomCode: string; playerId: string; cardId: string },
     ack: (res: ActionAck) => void

@@ -27,11 +27,13 @@ export function buildGameView(game: GameState, playerInfos: PublicPlayerInfo[], 
   const infoById = new Map(playerInfos.map((p) => [p.id, p]));
   const currentPlayerId = game.order[game.currentPlayerIndex];
   const viewerHand = game.players[viewerId]?.hand ?? [];
+  const contract = getContract(game.roundNumber);
 
   return {
     roundNumber: game.roundNumber,
-    contractDescription: describeContract(getContract(game.roundNumber)),
+    contractDescription: describeContract(contract),
     hasNextRound: game.roundNumber < MAX_IMPLEMENTED_ROUND,
+    isLayOutRound: contract.kind === "lay-out",
     turnPhase: game.turnPhase,
     currentPlayerId,
     discardTop: game.discard[game.discard.length - 1] ?? null,

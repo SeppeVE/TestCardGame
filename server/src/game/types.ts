@@ -65,6 +65,8 @@ export interface GameStateView {
   contractDescription: string;
   /** Whether a round after this one has been implemented yet. */
   hasNextRound: boolean;
+  /** The final round: nothing can be laid until the whole hand goes down at once (see game:layOutHand). */
+  isLayOutRound: boolean;
   turnPhase: TurnPhase;
   currentPlayerId: string;
   discardTop: Card | null;

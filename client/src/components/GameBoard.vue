@@ -16,6 +16,15 @@ const selectedMeldId = ref<string | null>(null);
 const actionError = ref("");
 const busy = ref(false);
 
+// --- final round: lay out the whole hand at once, grouped into sets/runs ---
+interface LayoutGroup {
+  id: string;
+  cardIds: string[];
+}
+const layoutGroups = ref<LayoutGroup[]>([]);
+const activeGroupId = ref<string | null>(null);
+let layoutGroupCounter = 0;
+
 // Selection doesn't carry meaning across turns/phases — clear it whenever
 // either changes so a stale pick can't be replayed into a new context.
 watch(
@@ -23,6 +32,8 @@ watch(
   () => {
     selectedCardIds.value = new Set();
     selectedMeldId.value = null;
+    layoutGroups.value = [];
+    activeGroupId.value = null;
   }
 );
 
@@ -81,6 +92,70 @@ function toggleMeldTarget(meld: Meld) {
   selectedMeldId.value = selectedMeldId.value === meld.id ? null : meld.id;
 }
 
+// The final round: nothing can be laid until the whole hand goes down at
+// once, grouped into sets/runs of 3+, with exactly one card left to
+// discard. Cards not yet assigned to a group behave like the normal
+// discard-only selection (toggleCard/selectedCardIds) whenever no group
+// is currently active.
+const isLayingOut = computed(() => myAction.value === "meld-discard" && props.view.isLayOutRound && !me.value?.hasOpened);
+const layoutAssignedIds = computed(() => new Set(layoutGroups.value.flatMap((g) => g.cardIds)));
+const layoutUnassignedHand = computed(() => props.view.you.hand.filter((c) => !layoutAssignedIds.value.has(c.id)));
+const layoutNeeded = computed(() => props.view.you.hand.length - 1);
+const canSubmitLayout = computed(
+  () =>
+    layoutGroups.value.length > 0 &&
+    layoutGroups.value.every((g) => g.cardIds.length >= 3) &&
+    layoutAssignedIds.value.size === layoutNeeded.value
+);
+
+function cardById(id: string): Card | undefined {
+  return props.view.you.hand.find((c) => c.id === id);
+}
+
+function startLayoutGroup() {
+  const id = `g${++layoutGroupCounter}`;
+  layoutGroups.value = [...layoutGroups.value, { id, cardIds: [] }];
+  activeGroupId.value = id;
+  selectedCardIds.value = new Set();
+}
+
+function finishLayoutGroup() {
+  activeGroupId.value = null;
+}
+
+function removeLayoutGroup(groupId: string) {
+  layoutGroups.value = layoutGroups.value.filter((g) => g.id !== groupId);
+  if (activeGroupId.value === groupId) activeGroupId.value = null;
+}
+
+function layoutCardClick(card: Card) {
+  if (activeGroupId.value) {
+    const groupId = activeGroupId.value;
+    layoutGroups.value = layoutGroups.value.map((g) =>
+      g.id === groupId ? { ...g, cardIds: [...g.cardIds, card.id] } : g
+    );
+    return;
+  }
+  toggleCard(card);
+}
+
+function removeCardFromGroup(groupId: string, cardId: string) {
+  layoutGroups.value = layoutGroups.value.map((g) =>
+    g.id === groupId ? { ...g, cardIds: g.cardIds.filter((id) => id !== cardId) } : g
+  );
+}
+
+function submitLayout() {
+  if (!canSubmitLayout.value) return;
+  runAction((ack) =>
+    socket.emit(
+      "game:layOutHand",
+      { roomCode: props.roomCode, playerId: props.myPlayerId, groups: layoutGroups.value.map((g) => g.cardIds) },
+      ack
+    )
+  );
+}
+
 function runAction(promiseLike: (ack: (res: ActionAck) => void) => void) {
   busy.value = true;
   actionError.value = "";
@@ -92,6 +167,8 @@ function runAction(promiseLike: (ack: (res: ActionAck) => void) => void) {
     }
     selectedCardIds.value = new Set();
     selectedMeldId.value = null;
+    layoutGroups.value = [];
+    activeGroupId.value = null;
   });
 }
 
@@ -242,20 +319,59 @@ function startNextRound() {
       </div>
 
       <div class="hand-section">
-        <div class="hand-header">
-          <span class="eyebrow felt-eyebrow">Your hand — click to select</span>
-          <span class="eyebrow felt-eyebrow dim-more">{{ selectedCardIds.size }} selected</span>
-        </div>
-        <div class="hand-cards">
-          <PlayingCard
-            v-for="c in view.you.hand"
-            :key="c.id"
-            :card="c"
-            :selected="selectedCardIds.has(c.id)"
-            :disabled="myAction !== 'meld-discard'"
-            @click="toggleCard(c)"
-          />
-        </div>
+        <template v-if="isLayingOut">
+          <div class="hand-header">
+            <span class="eyebrow felt-eyebrow">Final round — group your whole hand into sets/runs</span>
+            <span class="eyebrow felt-eyebrow dim-more">{{ layoutAssignedIds.size }} / {{ layoutNeeded }} assigned</span>
+          </div>
+
+          <div class="layout-groups" v-if="layoutGroups.length">
+            <div
+              v-for="g in layoutGroups"
+              :key="g.id"
+              class="layout-group"
+              :class="{ active: activeGroupId === g.id, invalid: g.cardIds.length > 0 && g.cardIds.length < 3 }"
+            >
+              <div class="layout-group-header">
+                <span>Group ({{ g.cardIds.length }})</span>
+                <div class="action-buttons">
+                  <button v-if="activeGroupId === g.id" class="text-btn small" @click="finishLayoutGroup">Done</button>
+                  <button v-else class="text-btn small" @click="activeGroupId = g.id">Edit</button>
+                  <button class="text-btn small" @click="removeLayoutGroup(g.id)">Remove</button>
+                </div>
+              </div>
+              <div class="layout-group-cards">
+                <PlayingCard v-for="id in g.cardIds" :key="id" :card="cardById(id)" @click="removeCardFromGroup(g.id, id)" />
+              </div>
+            </div>
+          </div>
+
+          <div class="hand-cards">
+            <PlayingCard
+              v-for="c in layoutUnassignedHand"
+              :key="c.id"
+              :card="c"
+              :selected="!activeGroupId && selectedCardIds.has(c.id)"
+              @click="layoutCardClick(c)"
+            />
+          </div>
+        </template>
+        <template v-else>
+          <div class="hand-header">
+            <span class="eyebrow felt-eyebrow">Your hand — click to select</span>
+            <span class="eyebrow felt-eyebrow dim-more">{{ selectedCardIds.size }} selected</span>
+          </div>
+          <div class="hand-cards">
+            <PlayingCard
+              v-for="c in view.you.hand"
+              :key="c.id"
+              :card="c"
+              :selected="selectedCardIds.has(c.id)"
+              :disabled="myAction !== 'meld-discard'"
+              @click="toggleCard(c)"
+            />
+          </div>
+        </template>
       </div>
 
       <div class="action-bar">
@@ -270,6 +386,20 @@ function startNextRound() {
             <button class="text-btn" :disabled="busy" @click="submitDecision(false)">Pass</button>
           </div>
           <p v-if="stillPendingNames.length" class="felt-dim small-note">Also deciding: {{ stillPendingNames.join(", ") }}</p>
+        </div>
+        <div v-else-if="isLayingOut" class="prompt layout-prompt">
+          <p class="prompt">
+            Assign {{ layoutNeeded }} of your {{ view.you.hand.length }} cards into groups of 3+ (sets or runs), leaving exactly
+            one to discard — or just discard without laying out at all.
+          </p>
+          <div class="action-buttons">
+            <button class="secondary" :disabled="busy || !!activeGroupId" @click="startLayoutGroup">+ New group</button>
+            <button v-if="activeGroupId" class="secondary" :disabled="busy" @click="finishLayoutGroup">Done with this group</button>
+            <button :disabled="busy || !canSubmitLayout" @click="submitLayout">Lay out hand</button>
+            <button class="text-btn" :disabled="busy || !!activeGroupId || selectedCardIds.size !== 1" @click="discardAndEndTurn">
+              Discard without laying out
+            </button>
+          </div>
         </div>
         <template v-else-if="myAction === 'meld-discard'">
           <p class="prompt">
@@ -647,6 +777,54 @@ function startNextRound() {
   overflow-x: auto;
   padding: 0.9rem 0.25rem 1.1rem;
   justify-content: center;
+}
+
+/* --- final-round lay-out groups --- */
+.layout-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.layout-group {
+  background: rgba(10, 25, 18, 0.35);
+  border: 1px solid rgba(246, 239, 220, 0.18);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+}
+
+.layout-group.active {
+  border-color: #f6efdc;
+}
+
+.layout-group.invalid {
+  border-color: rgba(255, 180, 168, 0.6);
+}
+
+.layout-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: rgba(246, 239, 220, 0.7);
+  margin-bottom: 0.4rem;
+}
+
+.layout-group-cards {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.text-btn.small {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.65rem;
+}
+
+.layout-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 /* --- action bar --- */

@@ -59,16 +59,21 @@ export function isValidRun(cards: Card[]): boolean {
   const ranks = real.map((c) => c.rank as Rank);
   if (new Set(ranks).size !== ranks.length) return false; // duplicate rank
 
-  const jokerCount = cards.length - real.length;
   const hasAce = ranks.includes("A");
   const aceInterpretations = hasAce ? [1, 14] : [null];
+  const highestValue = 14; // ace-high
 
   for (const aceValue of aceInterpretations) {
     const values = real.map((c) => (c.rank === "A" ? (aceValue as number) : RANK_VALUE[c.rank as Rank]));
     const min = Math.min(...values);
     const max = Math.max(...values);
-    const span = max - min + 1;
-    if (span === cards.length && span - real.length === jokerCount) {
+    // Jokers aren't limited to filling gaps between real cards — they can
+    // extend the run past either end too. So any window of exactly
+    // `cards.length` consecutive values that contains [min, max] works;
+    // we just need at least one such window to fit within 1..14.
+    const lowestStart = Math.max(1, max - cards.length + 1);
+    const highestStart = Math.min(min, highestValue - cards.length + 1);
+    if (lowestStart <= highestStart) {
       return true;
     }
   }

@@ -3,8 +3,8 @@
 A multiplayer card game, in the spirit of buddyboardgames.com. Players
 join a shared room (no accounts, minimum 4 players) and play a
 rummy-style game: 3 decks with jokers, 13-card hands, a discard-or-draw
-choice each turn, and a "buy the discard" side mechanic. **Rounds 1–3**
-of the planned 7-round game are implemented so far.
+choice each turn, and a "buy the discard" side mechanic. **All 6 rounds**
+of the game are implemented.
 
 ## How it works
 
@@ -31,16 +31,23 @@ of the planned 7-round game are implemented so far.
   - **Round 1** — one set of 3–4 cards of the same rank, different suits.
   - **Round 2** — one run of 3+ consecutive same-suit cards.
   - **Round 3** — one run of 4+ consecutive same-suit cards.
+  - **Round 4** — one run of 5+ consecutive same-suit cards.
+  - **Round 5** — one run of 6+ consecutive same-suit cards.
+  - **Round 6 (final)** — your entire hand at once: grouped into sets/runs
+    of 3+, using every card but one, laid down in a single turn. Nothing
+    can be laid before that — no partial opening, no adding to melds —
+    since the moment someone manages it, they've emptied their hand and
+    the round is already over. The board has a dedicated group-builder for
+    this: start a group, click cards to add them to it, finish it, repeat,
+    then lay the whole thing out (or just discard if you can't).
 
-  Once you've done that (this turn or an earlier one), you can also lay
-  new sets, new runs, and add cards to any meld on the table — yours or
-  another player's — regardless of the round.
+  For rounds 1–5, once you've opened (this turn or an earlier one), you
+  can also lay new sets, new runs, and add cards to any meld on the table —
+  yours or another player's.
 - End your turn with a mandatory discard. Emptying your hand this way wins
   the round; everyone else pays the winner 2 coins (or whatever they have
   left, if less). The host can then start the next round, carrying coins
   forward.
-- Rounds 4–7 (further contracts, per the classic contract-rummy
-  progression) aren't built yet.
 
 No accounts — you pick a display name, create or join a room by a 4-letter
 code (or a shareable link), and that's it. Your identity is remembered in
