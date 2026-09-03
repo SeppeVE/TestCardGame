@@ -1,3 +1,5 @@
+import type { GameState } from "./game/engine.js";
+import type { PublicPlayerInfo } from "./game/view.js";
 import type { Player, RoomState } from "./types.js";
 
 interface InternalPlayer {
@@ -9,10 +11,12 @@ interface InternalPlayer {
   disconnectedAt: number | null;
 }
 
-interface InternalRoom {
+export interface InternalRoom {
   code: string;
   hostId: string;
   players: Map<string, InternalPlayer>;
+  /** Set once the host starts a game; undefined while the room is just a lobby. */
+  game?: GameState;
 }
 
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I — easy to misread
@@ -146,7 +150,16 @@ export class RoomManager {
         connected: p.connected,
         isHost: p.id === room.hostId,
       }));
-    return { code: room.code, hostId: room.hostId, players };
+    return { code: room.code, hostId: room.hostId, players, phase: room.game ? "playing" : "lobby" };
+  }
+
+  /** Seat order (join order) as plain player ids — used to start a game. */
+  getSeatOrder(room: InternalRoom): string[] {
+    return [...room.players.values()].sort((a, b) => a.joinedAt - b.joinedAt).map((p) => p.id);
+  }
+
+  getPlayerInfos(room: InternalRoom): PublicPlayerInfo[] {
+    return [...room.players.values()].map((p) => ({ id: p.id, name: p.name, connected: p.connected }));
   }
 
   /** Drop rooms/players that have been abandoned for a long time. */

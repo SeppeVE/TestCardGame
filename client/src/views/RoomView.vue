@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { socket } from "../socket";
 import { getDisplayName, getPlayerId, setDisplayName, setPlayerId } from "../identity";
-import type { RoomState } from "../types";
+import type { GameStateView, RoomState } from "../types";
+import GameBoard from "../components/GameBoard.vue";
 
 const props = defineProps<{ code: string }>();
 const router = useRouter();
@@ -15,12 +16,16 @@ const phase = ref<Phase>("joining");
 const nameInput = ref(getDisplayName());
 const errorMsg = ref("");
 const room = ref<RoomState | null>(null);
+const gameView = ref<GameStateView | null>(null);
 const myPlayerId = ref<string | undefined>(getPlayerId(roomCode));
 const copied = ref(false);
+const startError = ref("");
+const starting = ref(false);
 
 const shareUrl = computed(() => `${location.origin}/room/${roomCode}`);
 const players = computed(() => room.value?.players ?? []);
 const isHost = computed(() => !!room.value && room.value.hostId === myPlayerId.value);
+const canStart = computed(() => players.value.length >= 2);
 
 function join(playerName: string) {
   phase.value = "joining";
@@ -56,6 +61,10 @@ function onRoomState(state: RoomState) {
   if (state.code === roomCode) room.value = state;
 }
 
+function onGameState(state: GameStateView) {
+  gameView.value = state;
+}
+
 function onReconnect() {
   // The socket got a new id after a network blip / server restart —
   // rejoin under our existing playerId so we reappear as ourselves.
@@ -70,6 +79,16 @@ function leaveRoom() {
   router.push({ name: "home" });
 }
 
+function startGame() {
+  if (!myPlayerId.value) return;
+  starting.value = true;
+  startError.value = "";
+  socket.emit("game:start", { roomCode, playerId: myPlayerId.value }, (res) => {
+    starting.value = false;
+    if (!res.ok) startError.value = res.error;
+  });
+}
+
 async function copyLink() {
   try {
     await navigator.clipboard.writeText(shareUrl.value);
@@ -82,6 +101,7 @@ async function copyLink() {
 
 onMounted(() => {
   socket.on("room:state", onRoomState);
+  socket.on("game:state", onGameState);
   socket.on("connect", onReconnect);
 
   const existingName = getDisplayName();
@@ -94,6 +114,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   socket.off("room:state", onRoomState);
+  socket.off("game:state", onGameState);
   socket.off("connect", onReconnect);
 });
 </script>
@@ -119,6 +140,14 @@ onBeforeUnmount(() => {
     <router-link to="/"><button class="secondary">Back home</button></router-link>
   </div>
 
+  <div class="game-wrap" v-else-if="room?.phase === 'playing' && gameView && myPlayerId">
+    <div class="game-topbar">
+      <span>Room {{ room.code }}</span>
+      <button class="secondary" @click="leaveRoom">Leave room</button>
+    </div>
+    <GameBoard :view="gameView" :room-code="roomCode" :my-player-id="myPlayerId" />
+  </div>
+
   <div class="card" v-else-if="room">
     <h1>Room {{ room.code }}</h1>
 
@@ -142,11 +171,14 @@ onBeforeUnmount(() => {
       </ul>
     </div>
 
-    <p v-if="isHost" class="hint">
-      You're the host. The game itself isn't built yet — this is just the lobby.
-    </p>
+    <template v-if="isHost">
+      <button :disabled="!canStart || starting" @click="startGame">Start game (round 1)</button>
+      <p v-if="!canStart" class="hint">Need at least 2 players to start.</p>
+      <p v-if="startError" class="error">{{ startError }}</p>
+    </template>
+    <p v-else class="hint">Waiting for the host to start the game.</p>
 
-    <button class="secondary" @click="leaveRoom">Leave room</button>
+    <button class="secondary" @click="leaveRoom" style="margin-top: 1rem">Leave room</button>
   </div>
 </template>
 
@@ -202,5 +234,20 @@ onBeforeUnmount(() => {
 .hint {
   color: var(--text-dim);
   font-size: 0.9rem;
+}
+
+.game-wrap {
+  width: 100%;
+  max-width: 960px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.game-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
 }
 </style>

@@ -3,7 +3,9 @@ import { createServer } from "node:http";
 import express from "express";
 import cors from "cors";
 import { Server } from "socket.io";
-import { RoomManager } from "./rooms.js";
+import { handleBuyDecision, handleDrawChoice, handleEndTurn, handleLayMeld, startRound1 } from "./game/engine.js";
+import { buildGameView } from "./game/view.js";
+import { RoomManager, type InternalRoom } from "./rooms.js";
 import type { ClientToServerEvents, ServerToClientEvents } from "./types.js";
 
 const PORT = Number(process.env.PORT) || 3001;
@@ -22,9 +24,27 @@ const rooms = new RoomManager();
 rooms.startSweeping();
 
 const MAX_NAME_LENGTH = 24;
+const MIN_GAME_PLAYERS = 2;
+const MAX_GAME_PLAYERS = 8;
 
 function sanitizeName(name: string): string {
   return name.trim().slice(0, MAX_NAME_LENGTH);
+}
+
+/** Push each connected player their own personalized view of the game (hands are hidden from each other). */
+function broadcastGameState(room: InternalRoom): void {
+  if (!room.game) return;
+  const playerInfos = rooms.getPlayerInfos(room);
+  for (const player of room.players.values()) {
+    if (!player.socketId) continue;
+    io.to(player.socketId).emit("game:state", buildGameView(room.game, playerInfos, player.id));
+  }
+}
+
+function sendGameStateTo(room: InternalRoom, socketId: string, playerId: string): void {
+  if (!room.game) return;
+  const playerInfos = rooms.getPlayerInfos(room);
+  io.to(socketId).emit("game:state", buildGameView(room.game, playerInfos, playerId));
 }
 
 io.on("connection", (socket) => {
@@ -53,12 +73,67 @@ io.on("connection", (socket) => {
     const state = rooms.toPublicState(room);
     ack({ ok: true, room: state, playerId: joinedId });
     socket.to(room.code).emit("room:state", state);
+    // Rejoining mid-game (e.g. a refresh) should drop the player straight
+    // back into the board instead of an empty lobby view.
+    sendGameStateTo(room, socket.id, joinedId);
   });
 
   socket.on("room:leave", ({ roomCode, playerId }) => {
     socket.leave(roomCode);
     const room = rooms.leaveRoom(roomCode, playerId);
     if (room) io.to(room.code).emit("room:state", rooms.toPublicState(room));
+  });
+
+  socket.on("game:start", ({ roomCode, playerId }, ack) => {
+    const room = rooms.getRoom(roomCode);
+    if (!room) return ack({ ok: false, error: "Room not found." });
+    if (room.hostId !== playerId) return ack({ ok: false, error: "Only the host can start the game." });
+    if (room.game) return ack({ ok: false, error: "The game has already started." });
+
+    const seatOrder = rooms.getSeatOrder(room);
+    if (seatOrder.length < MIN_GAME_PLAYERS) {
+      return ack({ ok: false, error: `Need at least ${MIN_GAME_PLAYERS} players to start.` });
+    }
+    if (seatOrder.length > MAX_GAME_PLAYERS) {
+      return ack({ ok: false, error: `At most ${MAX_GAME_PLAYERS} players are supported right now.` });
+    }
+
+    room.game = startRound1(seatOrder, room.hostId);
+    ack({ ok: true });
+    io.to(room.code).emit("room:state", rooms.toPublicState(room));
+    broadcastGameState(room);
+  });
+
+  socket.on("game:drawChoice", ({ roomCode, playerId, source }, ack) => {
+    const room = rooms.getRoom(roomCode);
+    if (!room?.game) return ack({ ok: false, error: "No game in progress." });
+    const result = handleDrawChoice(room.game, playerId, source);
+    ack(result);
+    if (result.ok) broadcastGameState(room);
+  });
+
+  socket.on("game:buyDecision", ({ roomCode, playerId, wantsToBuy }, ack) => {
+    const room = rooms.getRoom(roomCode);
+    if (!room?.game) return ack({ ok: false, error: "No game in progress." });
+    const result = handleBuyDecision(room.game, playerId, wantsToBuy);
+    ack(result);
+    if (result.ok) broadcastGameState(room);
+  });
+
+  socket.on("game:layMeld", ({ roomCode, playerId, cardIds, targetMeldId }, ack) => {
+    const room = rooms.getRoom(roomCode);
+    if (!room?.game) return ack({ ok: false, error: "No game in progress." });
+    const result = handleLayMeld(room.game, playerId, cardIds, targetMeldId);
+    ack(result);
+    if (result.ok) broadcastGameState(room);
+  });
+
+  socket.on("game:endTurn", ({ roomCode, playerId, cardId }, ack) => {
+    const room = rooms.getRoom(roomCode);
+    if (!room?.game) return ack({ ok: false, error: "No game in progress." });
+    const result = handleEndTurn(room.game, playerId, cardId);
+    ack(result);
+    if (result.ok) broadcastGameState(room);
   });
 
   socket.on("disconnect", () => {

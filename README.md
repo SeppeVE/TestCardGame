@@ -1,16 +1,38 @@
 # Card Table
 
-A multiplayer card game, in the spirit of buddyboardgames.com. This first
-milestone only covers **getting players into a shared room** — no game
-logic yet. That's the next step, built on top of this foundation.
+A multiplayer card game, in the spirit of buddyboardgames.com. Players
+join a shared room (no accounts) and play a rummy-style game: 3 decks with
+jokers, 13-card hands, a discard-or-draw choice each turn, and a "buy the
+discard" side mechanic. Only **round 1** of the planned 7-round game is
+implemented so far.
 
 ## How it works
 
-- **`client/`** — Vue 3 + Vite + TypeScript. Lets you create a room, share
-  its link/code, and see who's in the lobby in real time.
-- **`server/`** — Node + Express + Socket.io + TypeScript. Holds room state
-  in memory (no database) and pushes updates to everyone in a room over
-  WebSockets.
+- **`client/`** — Vue 3 + Vite + TypeScript. Lobby (create/join a room) plus
+  the game board: your hand, the discard/stock piles, table melds, and the
+  buy/draw/meld/discard prompts for whoever's turn it is.
+- **`server/`** — Node + Express + Socket.io + TypeScript. Holds room and
+  game state in memory (no database) and pushes each player their own view
+  of the game over WebSockets — hands are hidden from everyone but their
+  owner.
+
+### Round 1 rules, as implemented
+
+- Dealer flips the first discard; the player after the dealer acts first.
+- On your turn: take the visible discard, or draw blind from the stock. If
+  you decline the discard, everyone else (in seat order) gets one chance
+  to buy it for 1 coin — buying also costs a random "dirty" penalty card
+  drawn blind from the stock.
+- To lay anything at all, your first lay each round must be one set of 3–4
+  cards of the same rank in different suits (jokers are wild). Once you've
+  done that (this turn or an earlier one), you can also lay runs of 3+
+  consecutive same-suit cards, and add cards to any meld on the table —
+  yours or another player's.
+- End your turn with a mandatory discard. Emptying your hand this way wins
+  the round; everyone else pays the winner 2 coins (or whatever they have
+  left, if less).
+- Rounds 2–7 (different lay requirements each round, per the classic
+  contract-rummy progression) aren't built yet.
 
 No accounts — you pick a display name, create or join a room by a 4-letter
 code (or a shareable link), and that's it. Your identity is remembered in
