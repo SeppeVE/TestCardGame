@@ -24,7 +24,7 @@ const rooms = new RoomManager();
 rooms.startSweeping();
 
 const MAX_NAME_LENGTH = 24;
-const MIN_GAME_PLAYERS = 2;
+const MIN_GAME_PLAYERS = 4;
 const MAX_GAME_PLAYERS = 8;
 
 function sanitizeName(name: string): string {

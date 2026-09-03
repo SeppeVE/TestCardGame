@@ -10,6 +10,7 @@ const props = defineProps<{ code: string }>();
 const router = useRouter();
 
 const roomCode = props.code.toUpperCase();
+const MIN_PLAYERS = 4; // must match MIN_GAME_PLAYERS in server/src/index.ts
 
 type Phase = "need-name" | "joining" | "joined" | "error";
 const phase = ref<Phase>("joining");
@@ -25,7 +26,7 @@ const starting = ref(false);
 const shareUrl = computed(() => `${location.origin}/room/${roomCode}`);
 const players = computed(() => room.value?.players ?? []);
 const isHost = computed(() => !!room.value && room.value.hostId === myPlayerId.value);
-const canStart = computed(() => players.value.length >= 2);
+const canStart = computed(() => players.value.length >= MIN_PLAYERS);
 
 function join(playerName: string) {
   phase.value = "joining";
@@ -173,7 +174,7 @@ onBeforeUnmount(() => {
 
     <template v-if="isHost">
       <button :disabled="!canStart || starting" @click="startGame">Start game (round 1)</button>
-      <p v-if="!canStart" class="hint">Need at least 2 players to start.</p>
+      <p v-if="!canStart" class="hint">Need at least {{ MIN_PLAYERS }} players to start.</p>
       <p v-if="startError" class="error">{{ startError }}</p>
     </template>
     <p v-else class="hint">Waiting for the host to start the game.</p>
