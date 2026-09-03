@@ -64,6 +64,8 @@ export interface GamePlayerView {
 
 export interface GameStateView {
   roundNumber: number;
+  contractDescription: string;
+  hasNextRound: boolean;
   turnPhase: TurnPhase;
   currentPlayerId: string;
   discardTop: Card | null;
@@ -90,6 +92,7 @@ export interface ClientToServerEvents {
   "room:leave": (payload: { roomCode: string; playerId: string }) => void;
 
   "game:start": (payload: { roomCode: string; playerId: string }, ack: (res: ActionAck) => void) => void;
+  "game:nextRound": (payload: { roomCode: string; playerId: string }, ack: (res: ActionAck) => void) => void;
   "game:discardDecision": (
     payload: { roomCode: string; playerId: string; wantsToTake: boolean },
     ack: (res: ActionAck) => void

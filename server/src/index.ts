@@ -3,7 +3,8 @@ import { createServer } from "node:http";
 import express from "express";
 import cors from "cors";
 import { Server } from "socket.io";
-import { handleDiscardDecision, handleEndTurn, handleLayMeld, startRound1 } from "./game/engine.js";
+import { handleDiscardDecision, handleEndTurn, handleLayMeld, startNextRound, startRound } from "./game/engine.js";
+import { MAX_IMPLEMENTED_ROUND } from "./game/contracts.js";
 import { buildGameView } from "./game/view.js";
 import { RoomManager, type InternalRoom } from "./rooms.js";
 import type { ClientToServerEvents, ServerToClientEvents } from "./types.js";
@@ -98,9 +99,23 @@ io.on("connection", (socket) => {
       return ack({ ok: false, error: `At most ${MAX_GAME_PLAYERS} players are supported right now.` });
     }
 
-    room.game = startRound1(seatOrder, room.hostId);
+    room.game = startRound(1, seatOrder, room.hostId);
     ack({ ok: true });
     io.to(room.code).emit("room:state", rooms.toPublicState(room));
+    broadcastGameState(room);
+  });
+
+  socket.on("game:nextRound", ({ roomCode, playerId }, ack) => {
+    const room = rooms.getRoom(roomCode);
+    if (!room?.game) return ack({ ok: false, error: "No game in progress." });
+    if (room.hostId !== playerId) return ack({ ok: false, error: "Only the host can start the next round." });
+    if (!room.game.roundResult) return ack({ ok: false, error: "This round isn't finished yet." });
+    if (room.game.roundNumber >= MAX_IMPLEMENTED_ROUND) {
+      return ack({ ok: false, error: "There's no next round yet." });
+    }
+
+    room.game = startNextRound(room.game);
+    ack({ ok: true });
     broadcastGameState(room);
   });
 

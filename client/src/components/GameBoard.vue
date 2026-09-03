@@ -8,6 +8,7 @@ const props = defineProps<{
   view: GameStateView;
   roomCode: string;
   myPlayerId: string;
+  isHost: boolean;
 }>();
 
 const selectedCardIds = ref<Set<string>>(new Set());
@@ -132,6 +133,10 @@ function discardAndEndTurn() {
   if (!cardId || selectedCardIds.value.size !== 1) return;
   runAction((ack) => socket.emit("game:endTurn", { roomCode: props.roomCode, playerId: props.myPlayerId, cardId }, ack));
 }
+
+function startNextRound() {
+  runAction((ack) => socket.emit("game:nextRound", { roomCode: props.roomCode, playerId: props.myPlayerId }, ack));
+}
 </script>
 
 <template>
@@ -148,7 +153,12 @@ function discardAndEndTurn() {
           <span class="dim">({{ p.coins }} total)</span>
         </li>
       </ul>
-      <p class="dim small">Rounds 2-7 aren't built yet — this is as far as the game goes for now.</p>
+      <template v-if="view.hasNextRound">
+        <button v-if="isHost" :disabled="busy" @click="startNextRound">Start round {{ view.roundNumber + 1 }}</button>
+        <p v-else class="dim small">Waiting for the host to start round {{ view.roundNumber + 1 }}.</p>
+      </template>
+      <p v-else class="dim small">Rounds {{ view.roundNumber + 1 }}-7 aren't built yet — this is as far as the game goes for now.</p>
+      <p v-if="actionError" class="error" style="margin-top: 0.75rem">{{ actionError }}</p>
     </div>
 
     <div class="felt">
@@ -196,6 +206,7 @@ function discardAndEndTurn() {
               <span class="score-label">Round</span>
               <span class="score-value small-score">{{ view.roundNumber }}</span>
             </div>
+            <p class="contract-note">To open: {{ view.contractDescription }}.</p>
           </div>
         </div>
 
@@ -265,7 +276,7 @@ function discardAndEndTurn() {
             {{
               me?.hasOpened
                 ? "Lay a set/run, add to any meld, or discard to end your turn."
-                : "Lay your opening set of 3 (same rank, different suits) to start, or just discard."
+                : `To start this round, ${view.contractDescription}, or just discard.`
             }}
           </p>
           <div class="action-buttons">
@@ -472,6 +483,13 @@ function discardAndEndTurn() {
   justify-content: space-between;
   align-items: baseline;
   gap: 1rem;
+}
+
+.contract-note {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: rgba(246, 239, 220, 0.6);
 }
 
 .score-label {

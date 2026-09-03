@@ -61,6 +61,10 @@ export interface GamePlayerView {
 /** What one specific player is allowed to see of the game right now. */
 export interface GameStateView {
   roundNumber: number;
+  /** Human-readable description of what this round's opening lay requires. */
+  contractDescription: string;
+  /** Whether a round after this one has been implemented yet. */
+  hasNextRound: boolean;
   turnPhase: TurnPhase;
   currentPlayerId: string;
   discardTop: Card | null;

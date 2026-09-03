@@ -146,7 +146,7 @@ onBeforeUnmount(() => {
       <span>Room {{ room.code }}</span>
       <button class="secondary" @click="leaveRoom">Leave room</button>
     </div>
-    <GameBoard :view="gameView" :room-code="roomCode" :my-player-id="myPlayerId" />
+    <GameBoard :view="gameView" :room-code="roomCode" :my-player-id="myPlayerId" :is-host="isHost" />
   </div>
 
   <div class="card" v-else-if="room">

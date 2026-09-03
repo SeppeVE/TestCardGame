@@ -1,4 +1,5 @@
 import { buildShoe, shuffle } from "./cards.js";
+import { getContract } from "./contracts.js";
 import { isValidExtension, isValidRun, isValidSet } from "./melds.js";
 import type { Card, DiscardDecisionState, Meld, RoundResult, TurnPhase } from "./types.js";
 
@@ -6,7 +7,7 @@ export interface GamePlayerState {
   id: string;
   hand: Card[];
   coins: number;
-  /** Has this player laid their round-1 opening set of three yet? */
+  /** Has this player laid their round's opening contract yet? */
   hasOpened: boolean;
 }
 
@@ -40,7 +41,12 @@ function nextMeldId(): string {
   return `meld-${Date.now()}-${meldIdCounter}`;
 }
 
-export function startRound1(playerIds: string[], dealerId: string, existingCoins?: Record<string, number>): GameState {
+export function startRound(
+  roundNumber: number,
+  playerIds: string[],
+  dealerId: string,
+  existingCoins?: Record<string, number>
+): GameState {
   const shoe = shuffle(buildShoe());
   const players: Record<string, GamePlayerState> = {};
   for (const id of playerIds) {
@@ -57,7 +63,7 @@ export function startRound1(playerIds: string[], dealerId: string, existingCoins
   const startIndex = (dealerIndex + 1) % playerIds.length;
 
   const game: GameState = {
-    roundNumber: 1,
+    roundNumber,
     dealerId,
     order: playerIds,
     currentPlayerIndex: startIndex,
@@ -71,6 +77,17 @@ export function startRound1(playerIds: string[], dealerId: string, existingCoins
   };
   beginDiscardDecision(game);
   return game;
+}
+
+/** Starts the round after `previousGame`, carrying coins forward and rotating the dealer. */
+export function startNextRound(previousGame: GameState): GameState {
+  const coins: Record<string, number> = {};
+  for (const id of previousGame.order) coins[id] = previousGame.players[id].coins;
+
+  const dealerIndex = previousGame.order.indexOf(previousGame.dealerId);
+  const nextDealerId = previousGame.order[(dealerIndex + 1) % previousGame.order.length];
+
+  return startRound(previousGame.roundNumber + 1, previousGame.order, nextDealerId, coins);
 }
 
 function currentPlayerId(game: GameState): string {
@@ -229,7 +246,7 @@ export function handleLayMeld(
 
   if (targetMeldId) {
     if (!player.hasOpened) {
-      return { ok: false, error: "Lay your opening set of three before adding to any meld." };
+      return { ok: false, error: "Lay your opening contract for this round before adding to any meld." };
     }
     const meld = game.melds.find((m) => m.id === targetMeldId);
     if (!meld) return { ok: false, error: "That meld no longer exists." };
@@ -242,11 +259,20 @@ export function handleLayMeld(
   }
 
   if (!player.hasOpened) {
-    if (!isValidSet(picked)) {
-      return { ok: false, error: "To start, lay exactly one set of 3 (or 4) matching cards of different suits." };
+    const contract = getContract(game.roundNumber);
+    const meetsContract =
+      contract.kind === "set" ? isValidSet(picked) : isValidRun(picked) && picked.length >= contract.length;
+    if (!meetsContract) {
+      return {
+        ok: false,
+        error:
+          contract.kind === "set"
+            ? "To start, lay exactly one set of 3 (or 4) matching cards of different suits."
+            : `To start, lay a run of at least ${contract.length} consecutive cards of the same suit.`,
+      };
     }
     removeFromHand(player.hand, cardIds);
-    game.melds.push({ id: nextMeldId(), type: "set", ownerId: playerId, cards: picked });
+    game.melds.push({ id: nextMeldId(), type: contract.kind, ownerId: playerId, cards: picked });
     player.hasOpened = true;
     return { ok: true };
   }

@@ -1,3 +1,4 @@
+import { describeContract, getContract, MAX_IMPLEMENTED_ROUND } from "./contracts.js";
 import type { GameState } from "./engine.js";
 import type { Card, GameStateView } from "./types.js";
 
@@ -29,6 +30,8 @@ export function buildGameView(game: GameState, playerInfos: PublicPlayerInfo[], 
 
   return {
     roundNumber: game.roundNumber,
+    contractDescription: describeContract(getContract(game.roundNumber)),
+    hasNextRound: game.roundNumber < MAX_IMPLEMENTED_ROUND,
     turnPhase: game.turnPhase,
     currentPlayerId,
     discardTop: game.discard[game.discard.length - 1] ?? null,
