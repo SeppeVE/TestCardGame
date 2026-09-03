@@ -236,7 +236,17 @@ function discardAndEndTurn() {
       </div>
 
       <div class="action-bar">
-        <p v-if="myAction === 'draw-choice'" class="prompt">Your turn: take the visible discard, or draw blind from the stock.</p>
+        <div v-if="myAction === 'draw-choice'" class="prompt buy-prompt">
+          <span>Your turn: take the visible discard, or draw blind from the stock.</span>
+          <div class="action-buttons">
+            <button :disabled="busy || !view.discardTop" @click="chooseDraw('discard')">
+              Take discard{{
+                view.discardTop ? ` (${view.discardTop.isJoker ? "Joker" : `${view.discardTop.rank}${view.discardTop.suit}`})` : ""
+              }}
+            </button>
+            <button class="secondary" :disabled="busy" @click="chooseDraw('stock')">Draw blind instead</button>
+          </div>
+        </div>
         <div v-else-if="myAction === 'buy-decision'" class="prompt buy-prompt">
           <span
             >Buy the discard ({{ view.discardTop?.isJoker ? "Joker" : `${view.discardTop?.rank}${view.discardTop?.suit}` }}) for 1

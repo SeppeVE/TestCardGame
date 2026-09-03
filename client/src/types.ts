@@ -24,6 +24,8 @@ export interface Card {
   isJoker: boolean;
   rank?: Rank;
   suit?: Suit;
+  /** Which of the 3 physical decks this card came from (0-2) — purely cosmetic, each deck has its own house look. */
+  deckIndex: number;
 }
 
 export type MeldType = "set" | "run";

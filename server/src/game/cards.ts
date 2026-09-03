@@ -9,11 +9,11 @@ export function buildShoe(): Card[] {
   for (let deck = 0; deck < DECK_COUNT; deck++) {
     for (const suit of SUITS) {
       for (const rank of RANKS) {
-        cards.push({ id: `d${deck}-${suit}${rank}`, isJoker: false, rank, suit });
+        cards.push({ id: `d${deck}-${suit}${rank}`, isJoker: false, rank, suit, deckIndex: deck });
       }
     }
     for (let j = 0; j < JOKERS_PER_DECK; j++) {
-      cards.push({ id: `d${deck}-joker${j}`, isJoker: true });
+      cards.push({ id: `d${deck}-joker${j}`, isJoker: true, deckIndex: deck });
     }
   }
   return cards;

@@ -16,6 +16,27 @@ defineEmits<{ click: [] }>();
 
 const SUIT_SYMBOL: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 
+// The 3 physical decks each have their own house look, straight from the
+// Card Decks kit: Emerald (crisp stock), Oxblood (warm foxing), Slate
+// (heavy play wear). `line`/`lattice` are the two opacities of the cream
+// ink used for the back pattern; `wear` adds Slate's extra worn streak.
+const DECK_THEMES = [
+  { front: "#f6efdc", ink: "#1d1b18", red: "#8f2020", back: "#2c5c42", lattice: "rgba(246,239,220,.5)", line: "rgba(246,239,220,.88)", wear: false },
+  { front: "#f0e3c6", ink: "#221f19", red: "#9c2f24", back: "#7e2b2b", lattice: "rgba(240,227,198,.46)", line: "rgba(240,227,198,.85)", wear: false },
+  { front: "#e6dcc4", ink: "#2b2721", red: "#9a3a2c", back: "#2f4a6d", lattice: "rgba(230,220,196,.4)", line: "rgba(230,220,196,.76)", wear: true },
+];
+
+const theme = computed(() => DECK_THEMES[props.card?.deckIndex ?? 0] ?? DECK_THEMES[0]);
+
+const themeStyle = computed(() => ({
+  "--card-front": theme.value.front,
+  "--card-ink": theme.value.ink,
+  "--card-red": theme.value.red,
+  "--card-back": theme.value.back,
+  "--card-lattice": theme.value.lattice,
+  "--card-line": theme.value.line,
+}));
+
 const isRed = computed(() => props.card?.suit === "H" || props.card?.suit === "D");
 const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.suit] : ""));
 </script>
@@ -24,6 +45,7 @@ const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.sui
   <button
     class="playing-card"
     :class="[size, { selected, disabled, 'face-down': !card, joker: card?.isJoker, red: isRed }]"
+    :style="themeStyle"
     type="button"
     @click="!disabled && $emit('click')"
   >
@@ -44,6 +66,7 @@ const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.sui
     <template v-else>
       <span class="card-back">
         <span class="lattice" />
+        <span v-if="theme.wear" class="wear" />
         <span class="frame frame-outer" />
         <span class="frame frame-inner" />
         <span class="back-ornament">
@@ -63,8 +86,8 @@ const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.sui
   -webkit-appearance: none;
   border-radius: 10px;
   border: none;
-  background: #f6efdc;
-  color: #1d1b18;
+  background: var(--card-front);
+  color: var(--card-ink);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -90,7 +113,7 @@ const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.sui
 }
 
 .playing-card.red {
-  color: #8f2020;
+  color: var(--card-red);
 }
 
 .playing-card.selected {
@@ -166,7 +189,7 @@ const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.sui
 .playing-card.face-down {
   cursor: default;
   padding: 5px;
-  background: #f6efdc;
+  background: var(--card-front);
 }
 
 .card-back {
@@ -175,20 +198,26 @@ const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.sui
   width: 100%;
   height: 100%;
   border-radius: 5px;
-  background: #2c5c42;
+  background: var(--card-back);
   overflow: hidden;
 }
 
 .lattice {
   position: absolute;
   inset: 0;
-  background-image: repeating-linear-gradient(45deg, rgba(246, 239, 220, 0) 0 4px, rgba(246, 239, 220, 0.5) 4px 5px),
-    repeating-linear-gradient(-45deg, rgba(246, 239, 220, 0) 0 4px, rgba(246, 239, 220, 0.5) 4px 5px);
+  background-image: repeating-linear-gradient(45deg, transparent 0 4px, var(--card-lattice) 4px 5px),
+    repeating-linear-gradient(-45deg, transparent 0 4px, var(--card-lattice) 4px 5px);
+}
+
+.wear {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, var(--card-lattice) 0 2px, transparent 2px 46px);
 }
 
 .frame {
   position: absolute;
-  border: 1px solid rgba(246, 239, 220, 0.85);
+  border: 1px solid var(--card-line);
 }
 
 .frame-outer {
@@ -216,9 +245,9 @@ const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.sui
   transform: translateX(-50%);
   width: 55%;
   height: 100%;
-  border: 1.5px solid rgba(246, 239, 220, 0.9);
+  border: 1.5px solid var(--card-line);
   border-radius: 40%;
-  background: #2c5c42;
+  background: var(--card-back);
 }
 
 .orn-h {
@@ -228,9 +257,9 @@ const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.sui
   transform: translateY(-50%);
   width: 100%;
   height: 24%;
-  border: 1.5px solid rgba(246, 239, 220, 0.9);
+  border: 1.5px solid var(--card-line);
   border-radius: 30%;
-  background: #2c5c42;
+  background: var(--card-back);
 }
 
 .orn-dot {
@@ -240,7 +269,7 @@ const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.sui
   transform: translate(-50%, -50%);
   width: 26%;
   height: 12%;
-  border: 1.5px solid rgba(246, 239, 220, 0.9);
+  border: 1.5px solid var(--card-line);
   border-radius: 50%;
 }
 
