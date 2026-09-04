@@ -119,6 +119,7 @@ const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.sui
 .playing-card.selected {
   transform: translateY(-12px);
   box-shadow: 0 8px 16px rgba(30, 20, 5, 0.4), inset 0 0 0 2px #1f4432;
+  z-index: 500;
 }
 
 .playing-card.disabled {
@@ -127,6 +128,7 @@ const suitSymbol = computed(() => (props.card?.suit ? SUIT_SYMBOL[props.card.sui
 
 .playing-card:not(.disabled):not(.face-down):hover {
   transform: translateY(-5px);
+  z-index: 500;
 }
 
 .corner {

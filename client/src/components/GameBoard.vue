@@ -80,6 +80,24 @@ function sortHand(by: "value" | "suit") {
   handOrder.value = sorted.map((c) => c.id);
 }
 
+// Cards fan out like a hand of cards held in real life: overlapping, each
+// one rotated a little more than its neighbor around a pivot below the
+// hand, with cards further from center sitting a touch lower. The spread
+// narrows automatically for bigger hands so it never gets absurd.
+function fanStyle(index: number, total: number): Record<string, string> {
+  if (total <= 1) return { "--fan-z": String(index) };
+  const mid = (total - 1) / 2;
+  const offset = index - mid;
+  const step = Math.min(4, 30 / (total - 1));
+  const rotate = offset * step;
+  const rise = Math.abs(offset) * step * 0.7;
+  return {
+    "--fan-z": String(index),
+    transform: `rotate(${rotate}deg) translateY(${rise}px)`,
+    transformOrigin: "bottom center",
+  };
+}
+
 // --- final round: lay out the whole hand at once, grouped into sets/runs ---
 interface LayoutGroup {
   id: string;
@@ -437,13 +455,9 @@ function startNextRound() {
           </div>
 
           <div class="hand-cards">
-            <PlayingCard
-              v-for="c in layoutUnassignedHand"
-              :key="c.id"
-              :card="c"
-              :selected="!activeGroupId && selectedCardIds.has(c.id)"
-              @click="layoutCardClick(c)"
-            />
+            <div v-for="(c, i) in layoutUnassignedHand" :key="c.id" class="hand-card-slot" :style="fanStyle(i, layoutUnassignedHand.length)">
+              <PlayingCard :card="c" :selected="!activeGroupId && selectedCardIds.has(c.id)" @click="layoutCardClick(c)" />
+            </div>
           </div>
         </template>
         <template v-else>
@@ -463,10 +477,11 @@ function startNextRound() {
           </div>
           <div class="hand-cards">
             <div
-              v-for="c in orderedHand"
+              v-for="(c, i) in orderedHand"
               :key="c.id"
               class="hand-card-slot"
               :class="{ dragging: draggedCardId === c.id }"
+              :style="fanStyle(i, orderedHand.length)"
               draggable="true"
               @dragstart="onCardDragStart(c.id, $event)"
               @dragover.prevent="onCardDragOver(c.id)"
@@ -908,10 +923,22 @@ function startNextRound() {
 
 .hand-cards {
   display: flex;
-  gap: 0.4rem;
   overflow-x: auto;
-  padding: 0.9rem 0.25rem 1.1rem;
+  overflow-y: visible;
+  padding: 1.5rem 1rem 1.2rem;
   justify-content: center;
+}
+
+/* Overlap every card after the first — the fan look, and the "take up
+   less space" ask. Applies whether the child is a draggable wrapper div
+   (main hand) or a PlayingCard directly (final-round layout hand). */
+.hand-cards > * + * {
+  margin-left: -34px;
+}
+
+.hand-cards > * {
+  position: relative;
+  z-index: var(--fan-z, 0);
 }
 
 .hand-card-slot {
@@ -921,6 +948,7 @@ function startNextRound() {
 
 .hand-card-slot.dragging {
   opacity: 0.4;
+  z-index: 999;
 }
 
 .hand-card-slot:active {
