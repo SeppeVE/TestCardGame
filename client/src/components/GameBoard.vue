@@ -16,6 +16,70 @@ const selectedMeldId = ref<string | null>(null);
 const actionError = ref("");
 const busy = ref(false);
 
+// --- custom hand order: the player can drag cards around, and the order
+// sticks (per card id) across re-renders. New cards (drawn/bought) are
+// appended in the server's default sorted order; cards that leave the
+// hand (melded/discarded) just drop out of the list. ---
+const handOrder = ref<string[]>([]);
+const draggedCardId = ref<string | null>(null);
+
+watch(
+  () => props.view.you.hand.map((c) => c.id),
+  (ids) => {
+    const idSet = new Set(ids);
+    const kept = handOrder.value.filter((id) => idSet.has(id));
+    const keptSet = new Set(kept);
+    const added = ids.filter((id) => !keptSet.has(id));
+    handOrder.value = [...kept, ...added];
+  },
+  { immediate: true }
+);
+
+const orderedHand = computed<Card[]>(() => {
+  const byId = new Map(props.view.you.hand.map((c) => [c.id, c]));
+  return handOrder.value.map((id) => byId.get(id)).filter((c): c is Card => !!c);
+});
+
+function onCardDragStart(cardId: string, event: DragEvent) {
+  draggedCardId.value = cardId;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", cardId);
+  }
+}
+
+function onCardDragOver(cardId: string) {
+  const draggedId = draggedCardId.value;
+  if (!draggedId || draggedId === cardId) return;
+  const order = [...handOrder.value];
+  const from = order.indexOf(draggedId);
+  const to = order.indexOf(cardId);
+  if (from === -1 || to === -1 || from === to) return;
+  order.splice(from, 1);
+  order.splice(to, 0, draggedId);
+  handOrder.value = order;
+}
+
+function onCardDragEnd() {
+  draggedCardId.value = null;
+}
+
+const SUIT_SORT_ORDER: Record<string, number> = { S: 0, H: 1, D: 2, C: 3 };
+const RANK_SORT_ORDER: Record<string, number> = Object.fromEntries(
+  ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"].map((r, i) => [r, i])
+);
+
+function sortHand(by: "value" | "suit") {
+  const sorted = [...props.view.you.hand].sort((a, b) => {
+    if (a.isJoker !== b.isJoker) return a.isJoker ? 1 : -1;
+    if (a.isJoker) return 0;
+    const rankDiff = RANK_SORT_ORDER[a.rank!] - RANK_SORT_ORDER[b.rank!];
+    const suitDiff = SUIT_SORT_ORDER[a.suit!] - SUIT_SORT_ORDER[b.suit!];
+    return by === "value" ? rankDiff || suitDiff : suitDiff || rankDiff;
+  });
+  handOrder.value = sorted.map((c) => c.id);
+}
+
 // --- final round: lay out the whole hand at once, grouped into sets/runs ---
 interface LayoutGroup {
   id: string;
@@ -384,18 +448,38 @@ function startNextRound() {
         </template>
         <template v-else>
           <div class="hand-header">
-            <span class="eyebrow felt-eyebrow">Your hand — click to select</span>
-            <span class="eyebrow felt-eyebrow dim-more">{{ selectedCardIds.size }} selected</span>
+            <span class="eyebrow felt-eyebrow">Your hand — click to select, drag to reorder</span>
+            <div class="hand-header-right">
+              <div class="sort-buttons">
+                <button type="button" class="text-btn small" :disabled="orderedHand.length < 2" @click="sortHand('value')">
+                  Sort by value
+                </button>
+                <button type="button" class="text-btn small" :disabled="orderedHand.length < 2" @click="sortHand('suit')">
+                  Sort by suit
+                </button>
+              </div>
+              <span class="eyebrow felt-eyebrow dim-more">{{ selectedCardIds.size }} selected</span>
+            </div>
           </div>
           <div class="hand-cards">
-            <PlayingCard
-              v-for="c in view.you.hand"
+            <div
+              v-for="c in orderedHand"
               :key="c.id"
-              :card="c"
-              :selected="selectedCardIds.has(c.id)"
-              :disabled="myAction !== 'meld-discard'"
-              @click="toggleCard(c)"
-            />
+              class="hand-card-slot"
+              :class="{ dragging: draggedCardId === c.id }"
+              draggable="true"
+              @dragstart="onCardDragStart(c.id, $event)"
+              @dragover.prevent="onCardDragOver(c.id)"
+              @drop.prevent
+              @dragend="onCardDragEnd"
+            >
+              <PlayingCard
+                :card="c"
+                :selected="selectedCardIds.has(c.id)"
+                :disabled="myAction !== 'meld-discard'"
+                @click="toggleCard(c)"
+              />
+            </div>
           </div>
         </template>
       </div>
@@ -807,6 +891,19 @@ function startNextRound() {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.hand-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sort-buttons {
+  display: flex;
+  gap: 0.4rem;
 }
 
 .hand-cards {
@@ -815,6 +912,19 @@ function startNextRound() {
   overflow-x: auto;
   padding: 0.9rem 0.25rem 1.1rem;
   justify-content: center;
+}
+
+.hand-card-slot {
+  display: inline-flex;
+  cursor: grab;
+}
+
+.hand-card-slot.dragging {
+  opacity: 0.4;
+}
+
+.hand-card-slot:active {
+  cursor: grabbing;
 }
 
 /* --- final-round lay-out groups --- */
